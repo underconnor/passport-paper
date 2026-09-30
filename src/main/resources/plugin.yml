@@ -1,0 +1,6 @@
+name: Passport
+version: 0.1.0-SNAPSHOT
+main: io.github.underconnor.passport.paper.PassportPaper
+api-version: '26.2'
+author: underconnor
+description: Central Passport admission and display enforcement
