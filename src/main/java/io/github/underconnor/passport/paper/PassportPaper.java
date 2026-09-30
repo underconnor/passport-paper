@@ -18,8 +18,10 @@ import java.util.concurrent.*;
 
 public final class PassportPaper extends JavaPlugin implements Listener {
     private final PolicyCache policies = new PolicyCache();
-    private final Set<UUID> refreshing = ConcurrentHashMap.newKeySet();
+    private final Map<UUID, Player> onlinePlayers = new ConcurrentHashMap<>();
     private ApiClient api;
+    private PolicyRefreshes refreshes;
+    private PolicyEventPoller eventPoller;
     private String serverId;
     private volatile boolean ready;
     private boolean chatPrefix, tabPrefix;
@@ -33,39 +35,54 @@ public final class PassportPaper extends JavaPlugin implements Listener {
                 Boolean.parseBoolean(ApiClient.env("PASSPORT_ALLOW_INSECURE_HTTP","false")));
             chatPrefix=Boolean.parseBoolean(ApiClient.env("PASSPORT_CHAT_PREFIX","true"));
             tabPrefix=Boolean.parseBoolean(ApiClient.env("PASSPORT_TAB_PREFIX","true"));
+            refreshes=new PolicyRefreshes(uuid -> api.policy(uuid).thenApply(policy -> {
+                if(!policies.acceptOrCurrent(policy)) throw new CompletionException(new IllegalStateException("Stale policy response"));
+                return policy;
+            }));
+            eventPoller=new PolicyEventPoller(api::events,() -> Set.copyOf(onlinePlayers.keySet()),this::refreshFromEvent);
             ready=true;
             Bukkit.getScheduler().runTaskTimer(this,() -> Bukkit.getOnlinePlayers().forEach(player -> { if(!allowed(player)) player.kick(DENIED); }),1,20);
             Bukkit.getScheduler().runTaskTimer(this,() -> Bukkit.getOnlinePlayers().forEach(this::refresh),20,400);
+            Bukkit.getScheduler().runTaskTimer(this,() -> {
+                if(ready) eventPoller.poll().exceptionally(error -> null);
+            },1,40);
             getLogger().info("Passport enabled; fail-closed server ID: "+serverId);
         } catch(RuntimeException error) { getLogger().severe("Passport configuration invalid; admission closed: "+error.getMessage()); }
         // Hot loading/reloading must not retain players whose leases have not been checked.
         Bukkit.getOnlinePlayers().forEach(player -> { if(!allowed(player)) player.kick(DENIED); });
     }
-    @Override public void onDisable() { ready=false; if(api!=null) api.close(); }
+    @Override public void onDisable() { ready=false; onlinePlayers.clear(); if(api!=null) api.close(); }
     @EventHandler(priority=EventPriority.HIGHEST) public void preLogin(AsyncPlayerPreLoginEvent event) {
         if(!ready) { event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER,DENIED); return; }
         try {
-            Policy policy=api.policy(event.getUniqueId()).get(2100,TimeUnit.MILLISECONDS);
-            policies.accept(policy);
+            refreshes.fetch(event.getUniqueId()).get(2100,TimeUnit.MILLISECONDS);
             if(!policies.allows(event.getUniqueId(),serverId,Instant.now())) event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_WHITELIST,DENIED);
         } catch(Exception error) { event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER,DENIED); }
     }
     @EventHandler(priority=EventPriority.HIGHEST) public void login(PlayerLoginEvent event) {
         if(!allowed(event.getPlayer())) event.disallow(PlayerLoginEvent.Result.KICK_WHITELIST,DENIED);
     }
-    @EventHandler public void join(PlayerJoinEvent event) { if(!allowed(event.getPlayer())) event.getPlayer().kick(DENIED); else display(event.getPlayer()); }
+    @EventHandler public void join(PlayerJoinEvent event) {
+        if(!allowed(event.getPlayer())) event.getPlayer().kick(DENIED);
+        else { onlinePlayers.put(event.getPlayer().getUniqueId(),event.getPlayer()); display(event.getPlayer()); }
+    }
+    @EventHandler public void quit(PlayerQuitEvent event) { onlinePlayers.remove(event.getPlayer().getUniqueId(),event.getPlayer()); }
     private boolean allowed(Player player) { return ready && policies.allows(player.getUniqueId(),serverId,Instant.now()); }
-    private void refresh(Player player) {
-        UUID uuid=player.getUniqueId();
-        if(!refreshing.add(uuid)) return;
-        api.policy(uuid).whenComplete((policy,error) -> {
-            refreshing.remove(uuid);
-            if(!ready) return;
-            if(error==null) policies.accept(policy);
-            Bukkit.getScheduler().runTask(this,() -> {
-                if(!player.isOnline()) return;
-                if(!allowed(player)) player.kick(DENIED); else display(player);
-            });
+    private void refresh(Player player) { refreshFromEvent(player.getUniqueId(),false).exceptionally(error -> null); }
+    private CompletableFuture<Policy> refreshFromEvent(UUID uuid,boolean reset) {
+        if(!ready || !onlinePlayers.containsKey(uuid)) return CompletableFuture.completedFuture(null);
+        return (reset ? refreshes.fresh(uuid) : refreshes.fetch(uuid)).thenCompose(policy -> {
+            CompletableFuture<Policy> applied=new CompletableFuture<>();
+            if(!ready) return CompletableFuture.failedFuture(new IllegalStateException("Plugin stopping"));
+            // All Bukkit player actions run on the main thread; HTTP and policy parsing never block it.
+            try { Bukkit.getScheduler().runTask(this,() -> {
+                Player player=onlinePlayers.get(uuid);
+                if(player!=null && player.isOnline()) {
+                    if(!allowed(player)) player.kick(DENIED); else display(player);
+                }
+                applied.complete(policy);
+            }); } catch(RuntimeException error) { applied.completeExceptionally(error); }
+            return applied;
         });
     }
     private Component prefix(Player player) {
