@@ -1,6 +1,6 @@
 # passport-paper
 
-중앙 Passport 정책에 따른 Paper 입장 거부와 채팅·탭 목록 prefix를 구현한 첫 개발 버전입니다.
+중앙 Passport 정책에 따른 Paper 입장 제어, 실명 표시, 플러그인용 최소 신원 API, 플레이 기록 수집을 제공합니다.
 
 대상 API는 **Paper 26.2 build 129 stable**, Java 25입니다. 산출물: `build/libs/passport-paper-0.1.0-SNAPSHOT.jar`.
 
@@ -9,11 +9,11 @@
 - 비동기 pre-login 단계에서 서버 UUID 정책을 확인하고, 오류·미허가 결과는 입장 거부
 - 로그인 직전과 입장 직후에도 유효 정책 확인
 - 20초 간격 재조회, 1초 간격 만료 확인 후 종료. 활동 이벤트는 만료 즉시 거부
-- 채팅과 탭 목록의 `[roleLabel] MinecraftName` 표시. 중앙의 실명·학번을 공개하지 않음
+- 게임 정보 제공 동의 후 채팅·탭 목록에 `[roleLabel] MinecraftName (실명)` 표시. 전체 학번은 전송하지 않음
 - Adventure plain text로 prefix를 만들고 HTML·MiniMessage·legacy 색상 명령으로 해석하지 않음
 - 기존 LuckPerms 그룹·메타데이터를 변경하지 않음
 
-머리 위 이름 및 LuckPerms 쓰기 연동은 아직 구현하지 않았습니다. 채팅 renderer나 탭 표시를 관리하는 다른 플러그인과 겹치면 아래 변수를 false로 설정합니다. 서버 플러그인 reload는 지원 운영 방식이 아니며 재시작으로 적용합니다.
+머리 위 이름에는 Passport가 소유한 scoreboard team의 suffix로 실명을 표시합니다. 다른 플러그인의 기존 팀은 덮어쓰지 않아 그 경우 머리 위 실명은 생략되며 채팅·탭은 유지됩니다. LuckPerms 쓰기는 하지 않습니다. 채팅 renderer나 탭 표시를 관리하는 다른 플러그인과 겹치면 아래 변수를 false로 설정합니다. 서버 플러그인 reload는 지원 운영 방식이 아니며 재시작으로 적용합니다.
 
 ## 서버 등록과 상태 보고
 
@@ -39,6 +39,7 @@
 | `PASSPORT_SERVER_LABEL` | 서버 ID | 신규 발견 시 표시명. 기존 중앙 설정은 변경하지 않음 |
 | `PASSPORT_CHAT_PREFIX` | `true` | 채팅 renderer 설정 |
 | `PASSPORT_TAB_PREFIX` | `true` | 탭 목록 이름 설정 |
+| `PASSPORT_NAME_TAG` | `true` | Passport 소유 팀에 머리 위 실명 표시 |
 
 설정 오류 시 플러그인은 계속 등록된 상태로 신규 입장을 거부하고 기존 접속자를 종료합니다. 플러그인 JAR 제거 또는 비활성화는 이 보호 장치를 제거하므로 운영 변경으로 취급해야 합니다.
 
@@ -71,3 +72,32 @@ UUID별 버전 기준은 로그아웃해도 프로세스 메모리에 남습니�
 - SSE 대신 DB outbox를 2초 간격으로 poll합니다. 약 5초 회수 목표의 실제 클라이언트 측정은 아직 남아 있습니다.
 - 플러그인은 방화벽·프록시 forwarding 설정을 대신하지 않습니다. Paper 직접 접속 차단과 현대식 forwarding은 운영 배치의 필수 조건입니다.
 - 서비스별 토큰 분리·회전은 운영 구성 단계의 후속 작업입니다. 현재 API와 공유된 서비스 토큰을 사용합니다.
+
+## 신원 API와 PlaceholderAPI
+
+게임 정보 제공 동의(.4 이상)와 유효한 서버 접근 정책을 가진 현재 접속자만 조회됩니다. 전체 학번·Discord ID·학교 토큰은 플러그인으로 보내지 않습니다. 응답은 최대 60초 정책 lease에 묶인 메모리 캐시이며 조회 시 HTTP를 호출하지 않습니다.
+
+선택 설치한 PlaceholderAPI **2.12.3**에서 `%passport_real_name%`, `%passport_member%` (`true`/`false`), `%passport_admission_year%` (`26`/`25` 등)을 사용합니다. 미동의·미접속·만료 계정은 빈 값(회원 여부는 false)을 반환합니다. PAPI가 없어도 Passport는 정상 시작합니다.
+
+다른 Paper 플러그인은 Passport JAR을 compileOnly로 참조하고 `depend: [Passport]`를 선언한 뒤 사용합니다.
+
+```java
+PassportIdentityService identities = Bukkit.getServicesManager().load(PassportIdentityService.class);
+Optional<PassportIdentity> identity = identities.identity(player.getUniqueId());
+List<UUID> matches = identities.resolveOnline("실명 또는 IGN");
+// 동명이인은 matches.size() != 1 이므로 사용자가 IGN을 지정하도록 안내합니다.
+```
+
+타 플러그인의 명령 인수를 강제로 바꾸지 않습니다. 해당 플러그인이 `resolveOnline`을 사용해 실명 대상을 선택할 수 있습니다. 로그인 UUID와 실제 IGN은 변경하지 않습니다.
+
+## 접속 상태와 플레이 기록
+
+서버별 presence를 30초마다 보냅니다. `{serverId, observedAt, players:[uuid]}`이며 종료 시 빈 목록을 전송합니다. API의 90초 TTL이 지나면 오프라인으로 간주합니다. 통계 장애는 접속 권한을 허가하거나 취소하지 않습니다.
+
+신규 게임 정보 동의 후 `policy.telemetry.enabled=true` 및 유효한 epoch를 받은 플레이어만 기록합니다. **설치·동의 이후** 플레이 시간(서버 20tick당 1초, AFK 포함), 성공한 블록 파괴·설치(복수 블록 설치는 실제 블록 수), 최종 받은 피해(피해량 × 1000 정수), 사망, 몹 처치를 수집합니다. 기존 vanilla 통계는 가져오지 않습니다. limbo는 Paper가 아니므로 집계하지 않습니다.
+
+`plugins/Passport/statistics.json`은 0600 영속 outbox입니다. 메인 스레드는 메모리 이벤트만 추가하고 별도 worker가 1초 간격으로 원자 저장·fsync 후 전송합니다. API 장애 시 한 개의 고정 batch와 후속 누적 카운터를 보관하며 재시작 후 같은 batch ID와 내용으로 재시도합니다. 정상 종료 시 잔여 이벤트를 저장합니다. 강제 종료·전원 차단은 아직 checkpoint하지 않은 이벤트(정상 상태 약 1초, 느린 HTTP가 진행 중이면 추가 지연)를 잃을 수 있습니다. 영속 파일을 삭제하거나 다른 서버에 복사하지 마세요. 손상 파일은 덮어쓰지 않고 수집만 중단합니다.
+
+연결 해제·삭제·재연결 시 API가 telemetry epoch를 바꾸므로 예전 queue가 재전송돼도 다른 계정이나 새 연결 통계를 되살리지 않습니다. 통계 API는 delta의 batch ID와 payload를 영속적으로 중복 검사합니다. 중앙 수신·PostgreSQL 저장·개인/관리자 화면은 API 및 웹 배포가 함께 필요합니다.
+
+공식 API 참고: [Paper Player](https://jd.papermc.io/paper/26.2/org/bukkit/entity/Player.html), [Scoreboard Team](https://jd.papermc.io/paper/26.2/org/bukkit/scoreboard/Team.html), [PlaceholderAPI 내부 expansion](https://wiki.placeholderapi.com/developers/creating-a-placeholderexpansion/).
