@@ -12,7 +12,8 @@ import java.io.IOException;
 
 /** Durable delta outbox. A batch keeps its ID and exact bytes through retries and restarts. */
 public final class StatsJournal {
-    public static final List<String> METRICS=List.of("playSeconds","blocksBroken","blocksPlaced","damageTakenMilli","deaths","mobKills");
+    public static final List<String> METRICS=List.of("playSeconds","blocksBroken","blocksPlaced","damageTakenMilli","deaths","mobKills","playerKills","distanceCm");
+    private static final Set<String> OPTIONAL_METRICS=Set.of("playerKills","distanceCm");
     private final Path file; private final String serverId;
     private JsonObject state;
     public StatsJournal(Path file,String serverId) throws IOException {
@@ -38,13 +39,19 @@ public final class StatsJournal {
             for(JsonElement record:batch.getAsJsonArray("records")) { UUID.fromString(record.getAsJsonObject().get("minecraftUuid").getAsString()); UUID.fromString(record.getAsJsonObject().get("epoch").getAsString()); validateCounters(record.getAsJsonObject()); }
         }
     }
-    private static void validateCounters(JsonObject counters) { for(String key:METRICS) if(counters.get(key).getAsLong()<0 || counters.get(key).getAsLong()>Integer.MAX_VALUE) throw new IllegalArgumentException("counter"); }
+    private static void validateCounters(JsonObject counters) {
+        for(String key:METRICS) {
+            // Old pending batches are immutable: retain their original payload and receipt hash.
+            if(!counters.has(key) && OPTIONAL_METRICS.contains(key)) continue;
+            if(counters.get(key).getAsLong()<0 || counters.get(key).getAsLong()>Integer.MAX_VALUE) throw new IllegalArgumentException("counter");
+        }
+    }
     public synchronized void add(UUID uuid,UUID epoch,String metric,long amount) {
         if(epoch==null || !METRICS.contains(metric) || amount<0 || amount>Integer.MAX_VALUE) throw new IllegalArgumentException("counter");
         if(amount==0) return;
         String id=uuid+":"+epoch; JsonObject current=state.getAsJsonObject("current"); JsonObject counters=current.getAsJsonObject(id);
         if(counters==null) { counters=new JsonObject(); for(String key:METRICS) counters.addProperty(key,0); current.add(id,counters); }
-        long next=Math.addExact(counters.get(metric).getAsLong(),amount);
+        long next=Math.addExact(counters.has(metric) ? counters.get(metric).getAsLong() : 0,amount);
         if(next>Integer.MAX_VALUE) throw new IllegalStateException("Statistics batch counter exceeds maximum");
         counters.addProperty(metric,next);
     }

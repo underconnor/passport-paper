@@ -95,7 +95,7 @@ public final class PassportPaper extends JavaPlugin implements Listener {
         api.presence(serverId,onlinePlayers.keySet().stream().filter(uuid -> policies.get(uuid).map(policy -> policy.telemetryEnabled() && policy.allows(serverId,Instant.now())).orElse(false)).toList()).whenComplete((ignored,error) -> presenceRunning.set(false));
     }
     @Override public void onDisable() {
-        ready=false; if(statistics!=null) statistics.close(); if(placeholders!=null) placeholders.unregister();
+        if(statistics!=null) statistics.close(); ready=false; if(placeholders!=null) placeholders.unregister();
         Bukkit.getServicesManager().unregisterAll(this); nameTags.close(); onlineNames.clear(); onlinePlayers.clear();
         if(api!=null) { try { api.presence(serverId,List.of()).get(2200,TimeUnit.MILLISECONDS); } catch(Exception ignored) {} api.close(); }
     }

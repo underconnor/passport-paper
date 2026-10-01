@@ -6,6 +6,22 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 class StatsJournalTest {
     @TempDir Path directory;
+    @Test void oldSixCounterPendingBatchRemainsIdenticalWhileNewMetricsSurviveRestart() throws Exception {
+        Path file=directory.resolve("legacy.json"); UUID player=UUID.randomUUID(),epoch=UUID.randomUUID();
+        StatsJournal original=new StatsJournal(file,"lobby"); original.add(player,epoch,"mobKills",2); original.checkpoint();
+        var state=com.google.gson.JsonParser.parseString(Files.readString(file)).getAsJsonObject();
+        var oldBatch=state.getAsJsonArray("pending").get(0).getAsJsonObject();
+        var oldRecord=oldBatch.getAsJsonArray("records").get(0).getAsJsonObject(); oldRecord.remove("playerKills"); oldRecord.remove("distanceCm");
+        var current=new com.google.gson.JsonObject();
+        for(String key:StatsJournal.METRICS) if(!key.equals("playerKills") && !key.equals("distanceCm")) current.addProperty(key,0);
+        state.getAsJsonObject("current").add(player+":"+epoch,current); Files.writeString(file,state.toString());
+        StatsJournal upgraded=new StatsJournal(file,"lobby");
+        upgraded.add(player,epoch,"playerKills",1); upgraded.add(player,epoch,"distanceCm",1250); upgraded.checkpoint();
+        assertEquals(oldBatch.toString(),upgraded.first().orElseThrow().toString());
+        upgraded.acknowledge(oldBatch.get("id").getAsString()); upgraded.checkpoint();
+        var record=new StatsJournal(file,"lobby").first().orElseThrow().getAsJsonArray("records").get(0).getAsJsonObject();
+        assertEquals(1,record.get("playerKills").getAsInt()); assertEquals(1250,record.get("distanceCm").getAsInt()); assertEquals(0,record.get("mobKills").getAsInt());
+    }
     @Test void restartRetriesSameBatchAndCountersDoNotJoinAnotherEpoch() throws Exception {
         Path file=directory.resolve("statistics.json"); UUID player=UUID.randomUUID(),oldEpoch=UUID.randomUUID(),newEpoch=UUID.randomUUID();
         StatsJournal journal=new StatsJournal(file,"lobby"); journal.add(player,oldEpoch,"blocksBroken",3); journal.checkpoint();

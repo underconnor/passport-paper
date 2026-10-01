@@ -94,10 +94,12 @@ List<UUID> matches = identities.resolveOnline("실명 또는 IGN");
 
 서버별 presence를 30초마다 보냅니다. `{serverId, observedAt, players:[uuid]}`이며 종료 시 빈 목록을 전송합니다. API의 90초 TTL이 지나면 오프라인으로 간주합니다. 통계 장애는 접속 권한을 허가하거나 취소하지 않습니다.
 
-신규 게임 정보 동의 후 `policy.telemetry.enabled=true` 및 유효한 epoch를 받은 플레이어만 기록합니다. **설치·동의 이후** 플레이 시간(서버 20tick당 1초, AFK 포함), 성공한 블록 파괴·설치(복수 블록 설치는 실제 블록 수), 최종 받은 피해(피해량 × 1000 정수), 사망, 몹 처치를 수집합니다. 기존 vanilla 통계는 가져오지 않습니다. limbo는 Paper가 아니므로 집계하지 않습니다.
+신규 게임 정보 동의 후 `policy.telemetry.enabled=true` 및 유효한 epoch를 받은 플레이어만 기록합니다. **설치·동의 이후** 플레이 시간(서버 20tick당 1초, AFK 포함), 성공한 블록 파괴·설치(복수 블록 설치는 실제 블록 수), 최종 받은 피해(피해량 × 1000 정수), 사망, 몹 처치, 플레이어 처치, 대략적인 이동 거리(cm)를 수집합니다. 플레이어 처치는 사망 이벤트의 실제 killer만 한 번 기록하며 몹 처치와 구분합니다. limbo는 Paper가 아니므로 집계하지 않습니다.
+
+거리는 기존 1초 메인 스레드 타이머에서 vanilla `*_ONE_CM` 누적값의 차이만 읽습니다. 걷기·달리기·웅크리기·수영·수면/수중 이동·등반·비행·겉날개·광산 수레·보트·돼지·말·스트라이더·행복한 가스트·노틸러스의 16개 이동 방식을 합산하고, 낙하 거리는 중복을 피하기 위해 제외합니다. 좌표나 `PlayerMoveEvent`를 저장하지 않습니다. 접속·수집 시작·epoch 변경 때 기준값을 새로 잡아 기존 평생 기록을 가져오지 않으며, 통계 감소는 해당 항목 초기화로 처리합니다. 퇴장과 정상 종료 직전 마지막 차이를 반영합니다. 위치 간 직선 거리가 아니므로 순간이동은 거리로 추가하지 않으며, 샘플 사이 권한 변경·비정상 종료 시 일부 거리가 누락될 수 있습니다.
 
 `plugins/Passport/statistics.json`은 0600 영속 outbox입니다. 메인 스레드는 메모리 이벤트만 추가하고 별도 worker가 1초 간격으로 원자 저장·fsync 후 전송합니다. API 장애 시 한 개의 고정 batch와 후속 누적 카운터를 보관하며 재시작 후 같은 batch ID와 내용으로 재시도합니다. 정상 종료 시 잔여 이벤트를 저장합니다. 강제 종료·전원 차단은 아직 checkpoint하지 않은 이벤트(정상 상태 약 1초, 느린 HTTP가 진행 중이면 추가 지연)를 잃을 수 있습니다. 영속 파일을 삭제하거나 다른 서버에 복사하지 마세요. 손상 파일은 덮어쓰지 않고 수집만 중단합니다.
 
 연결 해제·삭제·재연결 시 API가 telemetry epoch를 바꾸므로 예전 queue가 재전송돼도 다른 계정이나 새 연결 통계를 되살리지 않습니다. 통계 API는 delta의 batch ID와 payload를 영속적으로 중복 검사합니다. 중앙 수신·PostgreSQL 저장·개인/관리자 화면은 API 및 웹 배포가 함께 필요합니다.
 
-공식 API 참고: [Paper Player](https://jd.papermc.io/paper/26.2/org/bukkit/entity/Player.html), [Scoreboard Team](https://jd.papermc.io/paper/26.2/org/bukkit/scoreboard/Team.html), [PlaceholderAPI 내부 expansion](https://wiki.placeholderapi.com/developers/creating-a-placeholderexpansion/).
+공식 API 참고: [Paper Player](https://jd.papermc.io/paper/26.2/org/bukkit/entity/Player.html), [이동 통계](https://jd.papermc.io/paper/26.2/org/bukkit/Statistic.html), [Scoreboard Team](https://jd.papermc.io/paper/26.2/org/bukkit/scoreboard/Team.html), [PlaceholderAPI 내부 expansion](https://wiki.placeholderapi.com/developers/creating-a-placeholderexpansion/).
