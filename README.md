@@ -15,6 +15,8 @@
 
 머리 위 이름에는 Passport가 소유한 scoreboard team의 suffix로 실명을 표시합니다. 다른 플러그인의 기존 팀은 덮어쓰지 않아 그 경우 머리 위 실명은 생략되며 채팅·탭은 유지됩니다. LuckPerms 쓰기는 하지 않습니다. 채팅 renderer나 탭 표시를 관리하는 다른 플러그인과 겹치면 아래 변수를 false로 설정합니다. 서버 플러그인 reload는 지원 운영 방식이 아니며 재시작으로 적용합니다.
 
+이름·역할 표시는 흰색/회색을 사용합니다. 채팅 본문은 기존 Component의 색·장식·클릭 정보를 그대로 이어 붙이며 이름 색을 본문에 상속시키지 않습니다.
+
 ## 서버 등록과 상태 보고
 
 시작 시 한 번, 이후 30초마다 서비스 Bearer 인증으로 `POST /v1/minecraft/servers/heartbeat`를 비동기 전송합니다. 진행 중 요청은 하나만 유지하며 2초 HTTP 제한을 적용합니다. Paper는 `PASSPORT_SERVER_ID`와 `PASSPORT_SERVER_LABEL`을 전송합니다. 표시명 기본값은 서버 ID입니다. IP·포트·플레이어 정보는 보내지 않습니다.
@@ -92,14 +94,24 @@ List<UUID> matches = identities.resolveOnline("실명 또는 IGN");
 
 ## 접속 상태와 플레이 기록
 
-서버별 presence를 30초마다 보냅니다. `{serverId, observedAt, players:[uuid]}`이며 종료 시 빈 목록을 전송합니다. API의 90초 TTL이 지나면 오프라인으로 간주합니다. 통계 장애는 접속 권한을 허가하거나 취소하지 않습니다.
+서버별 presence를 30초마다 보냅니다. `{serverId, observedAt, players:[uuid]}`이며 종료 시 빈 목록을 전송합니다. `telemetry.presenceEnabled=true` 및 해당 서버 접근권한을 받은 계정만 포함합니다. 접속 상태는 통계 수집 설정과 별개이므로 사용자나 서버가 통계를 꺼도 계속 표시할 수 있습니다. API의 90초 TTL이 지나면 오프라인으로 간주합니다. 통계 장애는 접속 권한을 허가하거나 취소하지 않습니다.
 
-신규 게임 정보 동의 후 `policy.telemetry.enabled=true` 및 유효한 epoch를 받은 플레이어만 기록합니다. **설치·동의 이후** 플레이 시간(서버 20tick당 1초, AFK 포함), 성공한 블록 파괴·설치(복수 블록 설치는 실제 블록 수), 최종 받은 피해(피해량 × 1000 정수), 사망, 몹 처치, 플레이어 처치, 대략적인 이동 거리(cm)를 수집합니다. 플레이어 처치는 사망 이벤트의 실제 killer만 한 번 기록하며 몹 처치와 구분합니다. limbo는 Paper가 아니므로 집계하지 않습니다.
+게임 정보 동의 후 `policy.telemetry.enabled=true`, 유효한 epoch와 `telemetry.serverIds`에 현재 서버 ID가 모두 있어야 기록합니다. 구 API처럼 서버 목록이 없으면 통계만 중단합니다. 서버 설정은 중앙 관리자에서, 본인 수집 여부·초기화는 웹에서 관리하며 로비의 초기 통계 설정은 OFF입니다. 재접속/설정 변경 때 로컬 임의 기본값으로 중앙 OFF를 덮어쓰지 않습니다.
+
+**설치·동의 이후** 플레이 시간, 성공한 블록 파괴·설치, 최종 받은 피해, 사망, 몹 처치, 플레이어 처치, 대략적인 이동 거리(cm)를 수집합니다. 취소된 이벤트와 `canBuild=false` 설치는 제외합니다. 복수 블록 설치는 실제 블록 수를 세고, 플레이어 처치는 취소되지 않은 사망 이벤트의 다른 플레이어 killer만 한 번 기록하여 몹 처치와 구분합니다. 받은 피해는 방어구·흡수 등 이벤트 최종 보정 이후 피해량 × 1000을 반올림한 값입니다. 화면의 1 피해량은 반 칸 하트이며, 이 수치는 남은 체력을 넘는 마지막 타격 피해도 포함할 수 있습니다. limbo는 Paper가 아니므로 집계하지 않습니다.
+
+플레이 시간은 기존 1초 메인 스레드 타이머에서 vanilla 플레이 tick 차이를 읽고 20tick당 1초로 변환합니다(AFK 포함). 서버 TPS가 낮으면 실제 시계보다 천천히 증가합니다. 처음 읽은 평생 기록은 가져오지 않고, 같은 접속 중 1초 미만의 나머지는 다음 샘플로 넘깁니다. 퇴장·정상 종료 시 마지막 차이를 반영하며 접속마다 남은 1초 미만은 버립니다.
 
 거리는 기존 1초 메인 스레드 타이머에서 vanilla `*_ONE_CM` 누적값의 차이만 읽습니다. 걷기·달리기·웅크리기·수영·수면/수중 이동·등반·비행·겉날개·광산 수레·보트·돼지·말·스트라이더·행복한 가스트·노틸러스의 16개 이동 방식을 합산하고, 낙하 거리는 중복을 피하기 위해 제외합니다. 좌표나 `PlayerMoveEvent`를 저장하지 않습니다. 접속·수집 시작·epoch 변경 때 기준값을 새로 잡아 기존 평생 기록을 가져오지 않으며, 통계 감소는 해당 항목 초기화로 처리합니다. 퇴장과 정상 종료 직전 마지막 차이를 반영합니다. 위치 간 직선 거리가 아니므로 순간이동은 거리로 추가하지 않으며, 샘플 사이 권한 변경·비정상 종료 시 일부 거리가 누락될 수 있습니다.
 
 `plugins/Passport/statistics.json`은 0600 영속 outbox입니다. 메인 스레드는 메모리 이벤트만 추가하고 별도 worker가 1초 간격으로 원자 저장·fsync 후 전송합니다. API 장애 시 한 개의 고정 batch와 후속 누적 카운터를 보관하며 재시작 후 같은 batch ID와 내용으로 재시도합니다. 정상 종료 시 잔여 이벤트를 저장합니다. 강제 종료·전원 차단은 아직 checkpoint하지 않은 이벤트(정상 상태 약 1초, 느린 HTTP가 진행 중이면 추가 지연)를 잃을 수 있습니다. 영속 파일을 삭제하거나 다른 서버에 복사하지 마세요. 손상 파일은 덮어쓰지 않고 수집만 중단합니다.
 
-연결 해제·삭제·재연결 시 API가 telemetry epoch를 바꾸므로 예전 queue가 재전송돼도 다른 계정이나 새 연결 통계를 되살리지 않습니다. 통계 API는 delta의 batch ID와 payload를 영속적으로 중복 검사합니다. 중앙 수신·PostgreSQL 저장·개인/관리자 화면은 API 및 웹 배포가 함께 필요합니다.
+연결 해제·삭제·재연결·수집 설정 변경·초기화 시 API가 telemetry epoch를 바꾸므로 예전 queue가 재전송돼도 이전 기록을 되살리지 않습니다. Paper는 OFF/epoch 변경 때 이동·플레이 시간의 기준값을 초기화합니다. 서버 설정 변경도 계정 epoch를 회전하므로 다른 서버의 아직 전송되지 않은 일부 기록이 함께 폐기될 수 있습니다. 이전 pending batch는 수정하지 않고 그대로 전송하며 중앙에서 오래된 epoch를 무시한 뒤 확인 응답을 보냅니다. 통계 API는 batch ID와 payload를 영속적으로 중복 검사합니다. 중앙 수신·PostgreSQL 저장·개인/관리자 화면은 API 및 웹 배포가 함께 필요합니다.
+
+## 관리자 위치 이동
+
+Velocity의 `/passport tp` 요청을 `passport:teleport` 채널로 받습니다. 채널 이름만으로 신뢰하지 않으며 서비스 비밀키 HMAC, 요청 ID, actor·target UUID, 목적 서버, 15초 만료를 검증합니다. 요청을 전달한 실제 플레이어가 actor여야 하고 같은 nonce는 다시 실행하지 않습니다.
+
+두 계정의 중앙 정책을 새로 조회한 후 메인 스레드에서 현재 정책과 접속 상태를 다시 확인합니다. actor는 중앙 관리자이면서 목적 서버 접근권한이 있어야 하고 target도 목적 서버 접근권한이 있어야 합니다. 같은 Paper에서 `teleportAsync`가 실제로 성공한 경우에만 서명된 성공 응답을 반환합니다. 플러그인 종료·접속 종료·오래된 요청·정책 조회 장애는 이동을 허가하지 않습니다.
 
 공식 API 참고: [Paper Player](https://jd.papermc.io/paper/26.2/org/bukkit/entity/Player.html), [이동 통계](https://jd.papermc.io/paper/26.2/org/bukkit/Statistic.html), [Scoreboard Team](https://jd.papermc.io/paper/26.2/org/bukkit/scoreboard/Team.html), [PlaceholderAPI 내부 expansion](https://wiki.placeholderapi.com/developers/creating-a-placeholderexpansion/).

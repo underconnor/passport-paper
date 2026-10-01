@@ -32,6 +32,7 @@ public final class PassportPaper extends JavaPlugin implements Listener {
     private final NameTags nameTags=new NameTags();
     private PassportPlaceholders placeholders;
     private StatisticsCollector statistics;
+    private TeleportReceiver teleports;
     private final Map<UUID,String> onlineNames=new ConcurrentHashMap<>();
     private final PassportIdentityService identities=new PassportIdentityService() {
         @Override public Optional<PassportIdentity> identity(UUID uuid) {
@@ -63,6 +64,7 @@ public final class PassportPaper extends JavaPlugin implements Listener {
                 if(!policies.acceptOrCurrent(policy)) throw new CompletionException(new IllegalStateException("Stale policy response"));
                 return policy;
             }));
+            teleports=new TeleportReceiver(this,serverId,System.getenv("API_SERVICE_TOKEN"),refreshes::fresh,policies::get);
             eventPoller=new PolicyEventPoller(api::events,() -> Set.copyOf(onlinePlayers.keySet()),this::refreshFromEvent);
             heartbeat=new ServerHeartbeat(() -> api.heartbeat("paper",List.of(new ServerRegistration(serverId,
                 ApiClient.env("PASSPORT_SERVER_LABEL",serverId)))),available -> {
@@ -71,7 +73,7 @@ public final class PassportPaper extends JavaPlugin implements Listener {
             });
             try {
                 statistics=new StatisticsCollector(this,api,serverId,player -> policies.get(player.getUniqueId())
-                    .filter(policy -> allowed(player) && policy.telemetryEnabled()).map(Policy::telemetryEpoch).orElse(null));
+                    .filter(policy -> ready && policy.collectsStatistics(serverId,Instant.now())).map(Policy::telemetryEpoch).orElse(null));
                 Bukkit.getPluginManager().registerEvents(statistics,this);
                 Bukkit.getScheduler().runTaskTimer(this,() -> { if(ready) statistics.second(Bukkit.getOnlinePlayers()); },20,20);
             } catch(java.io.IOException error) { getLogger().severe("Passport statistics unavailable; preserve statistics.json for recovery. Admission checks remain active."); }
@@ -92,10 +94,10 @@ public final class PassportPaper extends JavaPlugin implements Listener {
     }
     private void presence() {
         if(!ready || !presenceRunning.compareAndSet(false,true)) return;
-        api.presence(serverId,onlinePlayers.keySet().stream().filter(uuid -> policies.get(uuid).map(policy -> policy.telemetryEnabled() && policy.allows(serverId,Instant.now())).orElse(false)).toList()).whenComplete((ignored,error) -> presenceRunning.set(false));
+        api.presence(serverId,onlinePlayers.keySet().stream().filter(uuid -> policies.get(uuid).map(policy -> policy.presenceEnabled() && policy.allows(serverId,Instant.now())).orElse(false)).toList()).whenComplete((ignored,error) -> presenceRunning.set(false));
     }
     @Override public void onDisable() {
-        if(statistics!=null) statistics.close(); ready=false; if(placeholders!=null) placeholders.unregister();
+        if(teleports!=null) teleports.close(); if(statistics!=null) statistics.close(); ready=false; if(placeholders!=null) placeholders.unregister();
         Bukkit.getServicesManager().unregisterAll(this); nameTags.close(); onlineNames.clear(); onlinePlayers.clear();
         if(api!=null) { try { api.presence(serverId,List.of()).get(2200,TimeUnit.MILLISECONDS); } catch(Exception ignored) {} api.close(); }
     }
@@ -135,13 +137,11 @@ public final class PassportPaper extends JavaPlugin implements Listener {
         });
     }
     private Component prefix(Player player) {
-        return policies.get(player.getUniqueId()).map(policy -> policy.roleLabel().isBlank() ? Component.empty()
-            : Component.text("["+policy.roleLabel()+"] ",NamedTextColor.AQUA)).orElse(Component.empty());
+        return policies.get(player.getUniqueId()).map(policy -> IdentityDisplay.prefix(policy.roleLabel())).orElse(Component.empty());
     }
     private Component playerName(Player player) {
-        Component name=Component.text(player.getName(),NamedTextColor.WHITE);
         String real=identities.identity(player.getUniqueId()).map(PassportIdentity::realName).orElse("");
-        return real.isBlank() || real.equals(player.getName()) ? name : name.append(Component.text(" ("+real+")",NamedTextColor.GRAY));
+        return IdentityDisplay.name(player.getName(),real);
     }
     private void display(Player player) {
         if(tabPrefix) player.playerListName(prefix(player).append(playerName(player)));
@@ -149,8 +149,7 @@ public final class PassportPaper extends JavaPlugin implements Listener {
     }
     @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void chat(AsyncChatEvent event) {
         if(!allowed(event.getPlayer())) { event.setCancelled(true); return; }
-        if(chatPrefix) event.renderer((source,sourceDisplayName,message,viewer) -> prefix(source).append(playerName(source))
-            .append(Component.text(": ")).append(message));
+        if(chatPrefix) event.renderer((source,sourceDisplayName,message,viewer) -> IdentityDisplay.chat(prefix(source),playerName(source),message));
     }
     @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void move(PlayerMoveEvent event) { if(!allowed(event.getPlayer())) event.setCancelled(true); }
     @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void interact(PlayerInteractEvent event) { if(!allowed(event.getPlayer())) event.setCancelled(true); }

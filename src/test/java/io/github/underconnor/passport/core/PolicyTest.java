@@ -92,4 +92,19 @@ class PolicyTest {
         assertFalse(policy.active(now)); assertFalse(policy.allows("lobby",now));
         assertFalse(policy.valid(Instant.parse("2026-09-30T00:01:00Z")));
     }
+    @Test void collectionRequiresExplicitServerScopeAndPresenceRemainsIndependent() {
+        String body=json("active",1,"2026-09-30T00:00:00Z","2026-09-30T00:01:00Z")
+            .replace("[\"lobby\"]","[\"lobby\",\"survival\"]")
+            .replace("\"policyVersion\":1","\"telemetry\":{\"enabled\":true,\"epoch\":\"33333333-3333-4333-8333-333333333333\",\"serverIds\":[\"survival\"],\"presenceEnabled\":true},\"policyVersion\":1");
+        Policy policy=Policy.parse(body,uuid,now);
+        assertTrue(policy.allows("lobby",now)); assertFalse(policy.collectsStatistics("lobby",now));
+        assertTrue(policy.collectsStatistics("survival",now)); assertTrue(policy.presenceEnabled());
+        assertFalse(policy.collectsStatistics("survival",now.plusSeconds(60)));
+        Policy missing=Policy.parse(body.replace("\"serverIds\":[\"survival\"],",""),uuid,now);
+        assertFalse(missing.collectsStatistics("survival",now)); assertTrue(missing.allows("survival",now));
+        Policy off=Policy.parse(body.replace("\"enabled\":true","\"enabled\":false").replace("\"33333333-3333-4333-8333-333333333333\"","null").replace("\"serverIds\":[\"survival\"]","\"serverIds\":[]"),uuid,now);
+        assertTrue(off.presenceEnabled()); assertFalse(off.collectsStatistics("survival",now)); assertTrue(off.allows("survival",now));
+        assertThrows(IllegalArgumentException.class,() -> Policy.parse(body.replace("\"serverIds\":[\"survival\"]","\"serverIds\":[\"secret\"]"),uuid,now));
+        assertThrows(IllegalArgumentException.class,() -> Policy.parse(body.replace("\"serverIds\":[\"survival\"]","\"serverIds\":[\"survival\",\"survival\"]"),uuid,now));
+    }
 }

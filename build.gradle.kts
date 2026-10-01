@@ -13,6 +13,7 @@ dependencies {
     compileOnly("me.clip:placeholderapi:2.12.3") { isTransitive = false }
     testImplementation(platform("org.junit:junit-bom:5.12.2"))
     testImplementation("org.junit.jupiter:junit-jupiter")
+    testImplementation("io.papermc.paper:paper-api:26.2.build.129-stable")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 tasks.test { useJUnitPlatform() }

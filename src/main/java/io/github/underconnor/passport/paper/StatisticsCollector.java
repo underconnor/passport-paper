@@ -11,10 +11,11 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.Function;
 /** Events run on Paper's main thread. Persistence and network requests use one background worker. */
-final class StatisticsCollector implements Listener,AutoCloseable {
+final class StatisticsCollector extends StatisticsEvents implements AutoCloseable {
     private final JavaPlugin plugin; private final ApiClient api; private final Function<Player,UUID> epoch;
     private final StatsJournal journal;
     private final MovementDeltas movement=new MovementDeltas();
+    private final PlaytimeDeltas playtime=new PlaytimeDeltas();
     // Mutually selected vanilla travel modes; FALL is excluded to avoid counting airborne travel twice.
     private static final Statistic[] TRAVEL={Statistic.WALK_ONE_CM,Statistic.SPRINT_ONE_CM,Statistic.CROUCH_ONE_CM,
         Statistic.SWIM_ONE_CM,Statistic.WALK_ON_WATER_ONE_CM,Statistic.WALK_UNDER_WATER_ONE_CM,Statistic.CLIMB_ONE_CM,
@@ -31,7 +32,7 @@ final class StatisticsCollector implements Listener,AutoCloseable {
         journal=new StatsJournal(plugin.getDataFolder().toPath().resolve("statistics.json"),serverId);
         worker.scheduleWithFixedDelay(this::flush,1,1,TimeUnit.SECONDS);
     }
-    private void record(Player player,String metric,long value) {
+    @Override protected void record(Player player,String metric,long value) {
         record(player,epoch.apply(player),metric,value);
     }
     private void record(Player player,UUID generation,String metric,long value) {
@@ -40,28 +41,20 @@ final class StatisticsCollector implements Listener,AutoCloseable {
         incoming.add(new Increment(player.getUniqueId(),generation,metric,Math.min(value,Integer.MAX_VALUE)));
     }
     private void drain() { Increment item; while((item=incoming.poll())!=null) { queued.decrementAndGet(); journal.add(item.uuid(),item.epoch(),item.metric(),item.value()); } }
-    private void sampleDistance(Player player) {
+    private void sampleActivity(Player player) {
         UUID generation=healthy && !closed ? epoch.apply(player) : null;
-        if(generation==null) { movement.forget(player.getUniqueId()); return; }
+        if(generation==null) { movement.forget(player.getUniqueId()); playtime.forget(player.getUniqueId()); return; }
+        record(player,generation,"playSeconds",playtime.sample(player.getUniqueId(),generation,player.getStatistic(Statistic.PLAY_ONE_MINUTE)));
         int[] values=new int[TRAVEL.length];
         for(int i=0;i<TRAVEL.length;i++) values[i]=player.getStatistic(TRAVEL[i]);
         record(player,generation,"distanceCm",movement.sample(player.getUniqueId(),generation,values));
     }
-    void second(Collection<? extends Player> players) { for(Player player:players) { record(player,"playSeconds",1); sampleDistance(player); } }
-    @EventHandler(priority=EventPriority.MONITOR) public void join(PlayerJoinEvent event) { movement.forget(event.getPlayer().getUniqueId()); sampleDistance(event.getPlayer()); }
-    @EventHandler(priority=EventPriority.MONITOR) public void quit(PlayerQuitEvent event) { sampleDistance(event.getPlayer()); movement.forget(event.getPlayer().getUniqueId()); }
-    @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true) public void broken(BlockBreakEvent event) { record(event.getPlayer(),"blocksBroken",1); }
-    @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true) public void placed(BlockPlaceEvent event) { record(event.getPlayer(),"blocksPlaced",event instanceof BlockMultiPlaceEvent multi ? multi.getReplacedBlockStates().size() : 1); }
-    @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true) public void damage(EntityDamageEvent event) {
-        if(event.getEntity() instanceof Player player && Double.isFinite(event.getFinalDamage())) record(player,"damageTakenMilli",Math.round(Math.max(0,event.getFinalDamage())*1000));
+    void second(Collection<? extends Player> players) { for(Player player:players) sampleActivity(player); }
+    @EventHandler(priority=EventPriority.MONITOR) public void join(PlayerJoinEvent event) {
+        movement.forget(event.getPlayer().getUniqueId()); playtime.forget(event.getPlayer().getUniqueId()); sampleActivity(event.getPlayer());
     }
-    @EventHandler(priority=EventPriority.MONITOR) public void death(PlayerDeathEvent event) {
-        record(event.getEntity(),"deaths",1);
-        Player killer=event.getEntity().getKiller();
-        if(killer!=null && !killer.getUniqueId().equals(event.getEntity().getUniqueId())) record(killer,"playerKills",1);
-    }
-    @EventHandler(priority=EventPriority.MONITOR) public void killed(EntityDeathEvent event) {
-        if(event.getEntity() instanceof Mob && event.getEntity().getKiller()!=null) record(event.getEntity().getKiller(),"mobKills",1);
+    @EventHandler(priority=EventPriority.MONITOR) public void quit(PlayerQuitEvent event) {
+        sampleActivity(event.getPlayer()); movement.forget(event.getPlayer().getUniqueId()); playtime.forget(event.getPlayer().getUniqueId());
     }
     private void flush() {
         try {
@@ -80,7 +73,7 @@ final class StatisticsCollector implements Listener,AutoCloseable {
         } catch(Exception error) { if(apiHealthy && !closed) plugin.getLogger().warning("Passport statistics API unavailable; durable batches retained for retry"); apiHealthy=false; }
     }
     @Override public void close() {
-        plugin.getServer().getOnlinePlayers().forEach(this::sampleDistance); movement.clear();
+        plugin.getServer().getOnlinePlayers().forEach(this::sampleActivity); movement.clear(); playtime.clear();
         closed=true; worker.shutdown();
         try { if(!worker.awaitTermination(5,TimeUnit.SECONDS)) worker.shutdownNow(); drain(); journal.checkpoint(); }
         catch(Exception error) { plugin.getLogger().severe("Passport statistics shutdown checkpoint failed; preserve statistics.json for recovery."); }
