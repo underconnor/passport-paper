@@ -22,6 +22,7 @@ public final class PassportPaper extends JavaPlugin implements Listener {
     private ApiClient api;
     private PolicyRefreshes refreshes;
     private PolicyEventPoller eventPoller;
+    private ServerHeartbeat heartbeat;
     private String serverId;
     private volatile boolean ready;
     private boolean chatPrefix, tabPrefix;
@@ -40,7 +41,16 @@ public final class PassportPaper extends JavaPlugin implements Listener {
                 return policy;
             }));
             eventPoller=new PolicyEventPoller(api::events,() -> Set.copyOf(onlinePlayers.keySet()),this::refreshFromEvent);
+            heartbeat=new ServerHeartbeat(() -> api.heartbeat("paper",List.of(new ServerRegistration(serverId,
+                ApiClient.env("PASSPORT_SERVER_LABEL",serverId)))),available -> {
+                if(ready) { if(available) getLogger().info("Passport server registration recovered");
+                    else getLogger().warning("Passport server registration unavailable; existing access checks remain active"); }
+            });
             ready=true;
+            heartbeat.poll().exceptionally(error -> null);
+            Bukkit.getScheduler().runTaskTimer(this,() -> {
+                if(ready) heartbeat.poll().exceptionally(error -> null);
+            },600,600);
             Bukkit.getScheduler().runTaskTimer(this,() -> Bukkit.getOnlinePlayers().forEach(player -> { if(!allowed(player)) player.kick(DENIED); }),1,20);
             Bukkit.getScheduler().runTaskTimer(this,() -> Bukkit.getOnlinePlayers().forEach(this::refresh),20,400);
             Bukkit.getScheduler().runTaskTimer(this,() -> {
