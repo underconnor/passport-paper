@@ -36,7 +36,16 @@ public final class ApiClient implements AutoCloseable {
         return request("POST","v1/minecraft/presence",body).thenApply(ignored -> null);
     }
     public CompletableFuture<Void> statistics(JsonObject batch) {
-        return request("POST","v1/minecraft/stats/batches",batch).thenApply(ignored -> null);
+        return request("POST","v1/minecraft/stats/batches",batch).thenApply(response -> {
+            JsonObject result=JsonParser.parseString(response).getAsJsonObject();
+            if(!result.get("accepted").isJsonPrimitive() || !result.getAsJsonPrimitive("accepted").isBoolean() || !result.get("accepted").getAsBoolean()
+                || !result.get("duplicate").isJsonPrimitive() || !result.getAsJsonPrimitive("duplicate").isBoolean()) throw new IllegalArgumentException("Statistics acknowledgement rejected");
+            for(String key:List.of("received","ignored")) {
+                String value=result.get(key).getAsString();
+                if(!result.get(key).isJsonPrimitive() || !result.getAsJsonPrimitive(key).isNumber() || !value.matches("0|[1-9][0-9]{0,2}") || Integer.parseInt(value)>batch.getAsJsonArray("records").size()) throw new IllegalArgumentException("Statistics acknowledgement rejected");
+            }
+            return null;
+        });
     }
     public CompletableFuture<Policy> policy(UUID uuid) {
         return request("GET", "v1/minecraft/policies/" + uuid, null)

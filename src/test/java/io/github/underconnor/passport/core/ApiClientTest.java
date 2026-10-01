@@ -91,4 +91,24 @@ class ApiClientTest {
         } finally {server.stop(0);}
     }
 
+    @Test void statisticsRequiresExplicitValidAcknowledgementBeforeDeletingOutbox() throws Exception {
+        HttpServer server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
+        var response=new java.util.concurrent.atomic.AtomicReference<>("<html>SPA</html>");
+        server.createContext("/v1/minecraft/stats/batches",exchange -> {
+            byte[] bytes=response.get().getBytes(StandardCharsets.UTF_8); exchange.sendResponseHeaders(200,bytes.length);
+            exchange.getResponseBody().write(bytes); exchange.close();
+        }); server.start();
+        var batch=com.google.gson.JsonParser.parseString("{\"records\":[{}]}").getAsJsonObject();
+        try(ApiClient api=new ApiClient("http://127.0.0.1:"+server.getAddress().getPort(),token,true)) {
+            assertThrows(ExecutionException.class,() -> api.statistics(batch).get(3,TimeUnit.SECONDS));
+            response.set("{\"accepted\":false,\"duplicate\":false,\"received\":1,\"ignored\":0}");
+            assertThrows(ExecutionException.class,() -> api.statistics(batch).get(3,TimeUnit.SECONDS));
+            response.set("{\"accepted\":true,\"duplicate\":false,\"received\":2,\"ignored\":0}");
+            assertThrows(ExecutionException.class,() -> api.statistics(batch).get(3,TimeUnit.SECONDS));
+            response.set("{\"accepted\":true,\"duplicate\":false,\"received\":1,\"ignored\":0}");
+            api.statistics(batch).get(3,TimeUnit.SECONDS);
+            response.set("{\"accepted\":true,\"duplicate\":true,\"received\":1,\"ignored\":0}");
+            api.statistics(batch).get(3,TimeUnit.SECONDS);
+        } finally { server.stop(0); }
+    }
 }
