@@ -64,7 +64,7 @@ public final class PassportPaper extends JavaPlugin implements Listener {
                 if(!policies.acceptOrCurrent(policy)) throw new CompletionException(new IllegalStateException("Stale policy response"));
                 return policy;
             }));
-            teleports=new TeleportReceiver(this,serverId,System.getenv("API_SERVICE_TOKEN"),refreshes::fresh,policies::get);
+            teleports=new TeleportReceiver(this,serverId,TeleportSecrets.resolve(System.getenv("PASSPORT_TELEPORT_SECRET"),System.getenv("API_SERVICE_TOKEN")),refreshes::fresh,policies::get);
             eventPoller=new PolicyEventPoller(api::events,() -> Set.copyOf(onlinePlayers.keySet()),this::refreshFromEvent);
             heartbeat=new ServerHeartbeat(() -> api.heartbeat("paper",List.of(new ServerRegistration(serverId,
                 ApiClient.env("PASSPORT_SERVER_LABEL",serverId)))),available -> {

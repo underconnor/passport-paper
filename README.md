@@ -115,3 +115,8 @@ Velocity의 `/passport tp` 요청을 `passport:teleport` 채널로 받습니다.
 두 계정의 중앙 정책을 새로 조회한 후 메인 스레드에서 현재 정책과 접속 상태를 다시 확인합니다. actor는 중앙 관리자이면서 목적 서버 접근권한이 있어야 하고 target도 목적 서버 접근권한이 있어야 합니다. 같은 Paper에서 `teleportAsync`가 실제로 성공한 경우에만 서명된 성공 응답을 반환합니다. 플러그인 종료·접속 종료·오래된 요청·정책 조회 장애는 이동을 허가하지 않습니다.
 
 공식 API 참고: [Paper Player](https://jd.papermc.io/paper/26.2/org/bukkit/entity/Player.html), [이동 통계](https://jd.papermc.io/paper/26.2/org/bukkit/Statistic.html), [Scoreboard Team](https://jd.papermc.io/paper/26.2/org/bukkit/scoreboard/Team.html), [PlaceholderAPI 내부 expansion](https://wiki.placeholderapi.com/developers/creating-a-placeholderexpansion/).
+
+
+### 서비스별 API 키와 TP 서명
+
+`API_SERVICE_TOKEN`에는 이 서비스에 발급한 Passport 키를 넣습니다. `psk_` 키를 사용하면 `PASSPORT_TELEPORT_SECRET`에 프록시와 모든 Paper가 공유하는 별도 32자 이상의 무작위 비밀을 설정해야 합니다. API 키를 회전해도 TP 서명 비밀은 바뀌지 않습니다. 기존 키에서 이전하는 동안만 별도 값이 없을 때 기존 API 키를 서명에 사용합니다. 비밀은 저장소나 로그에 기록하지 않습니다.
