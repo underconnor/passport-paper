@@ -22,6 +22,8 @@
 
 `/help`, `/?`, `/도움말`은 `help.entries` 중 실제 설치·명령 권한·선택 추가 권한을 통과한 항목을 클릭 안내합니다. 두 공개 Velocity 안내 링크만 명시적 예외입니다. 플러그인·버전·전체 도움말 조회는 `passport.commands.inspect`로 제한하며, 명령 목록에서 제거하고 직접 실행도 차단합니다. `passport.display.staff`와 `passport.commands.inspect`의 기본값은 false입니다. 코어 및 실제 Paper 이벤트 객체의 모의 회귀를 검사하며 실제 클라이언트 화면·다른 플러그인 공존 검증은 별도입니다.
 
+관리 플러그인의 루트 권한이 비어 있어도 LuckPerms·FAWE/WorldEdit·Multiverse·PlaceholderAPI·OverworldLobby 관리 별칭은 현재 서버의 실제 권한으로 자동완성을 제한합니다. `//wand` 같은 동적 명령, 네임스페이스 별칭, 직접 입력한 명령의 하위 자동완성도 검사하며 `/lobby`, `/spawn`, 여행 명령은 유지합니다. 이 필터는 실행 권한을 부여하거나 LuckPerms 설정을 변경하지 않습니다.
+
 ## 정원 초과와 관리자 입장
 
 Paper 26.2의 `PlayerServerFullCheckEvent`에서만 정원 제한을 해제합니다. 비동기 pre-login에서 받은 현재 정책이 `active`이고 이 서버를 허용하며 `administrator: true`인 경우에만 적용합니다. 관리자 여부는 학교 인증 유효기간으로 제한된 중앙 API 정책을 사용하며, OP·LuckPerms 그룹·닉네임이나 기존 접속자의 권한으로 대신하지 않습니다. 만료·회수·다른 서버 scope·누락 정책은 우회를 허용하지 않으며 영구 권한을 추가하지 않습니다.

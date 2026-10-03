@@ -8,6 +8,8 @@ import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.event.*;
 import org.bukkit.event.player.*;
+import org.bukkit.event.server.TabCompleteEvent;
+import com.destroystokyo.paper.event.server.AsyncTabCompleteEvent;
 import java.util.*;
 import java.util.function.*;
 
@@ -17,11 +19,23 @@ final class CommandVisibility implements Listener,CommandExecutor,TabCompleter {
     private static final Set<String> INFORMATION=Set.of("plugins","pl","version","ver","about","icanhasbukkit","help","?");
     private static final Set<String> HELP=Set.of("help","?","도움말");
     record Entry(String command,String description,String permission,boolean proxy) {}
+    record CompletionDecision(boolean denied,Set<String> hidden) {}
     private final Function<String,Command> commands;
     private final Predicate<Player> allowed;
     private final List<Entry> entries;
+    private final Supplier<Set<String>> permissionNames;
+    private final Function<Supplier<CompletionDecision>,Optional<CompletionDecision>> completionThread;
+    private volatile Set<String> registeredPermissions=Set.of();
     CommandVisibility(Function<String,Command> commands,Predicate<Player> allowed,List<Entry> entries) {
+        this(commands,allowed,entries,Set::of);
+    }
+    CommandVisibility(Function<String,Command> commands,Predicate<Player> allowed,List<Entry> entries,Supplier<Set<String>> permissionNames) {
+        this(commands,allowed,entries,permissionNames,work -> Optional.of(work.get()));
+    }
+    CommandVisibility(Function<String,Command> commands,Predicate<Player> allowed,List<Entry> entries,Supplier<Set<String>> permissionNames,
+                      Function<Supplier<CompletionDecision>,Optional<CompletionDecision>> completionThread) {
         this.commands=commands; this.allowed=allowed; this.entries=List.copyOf(entries);
+        this.permissionNames=permissionNames; this.completionThread=completionThread;
     }
     static List<Entry> read(ConfigurationSection config) {
         List<Entry> entries=new ArrayList<>();
@@ -47,13 +61,41 @@ final class CommandVisibility implements Listener,CommandExecutor,TabCompleter {
     private static String bare(String root) { return root.substring(root.lastIndexOf(':')+1); }
     private boolean visible(Player player,String root) {
         if(!player.hasPermission(INSPECT) && INFORMATION.contains(bare(root)) && !HELP.contains(root)) return false;
-        Command command=commands.apply(root);
-        // Unknown native Brigadier commands have already been filtered by Paper. Do not guess their permissions.
-        return command==null || command.testPermissionSilent(player);
+        ManagedCommandAccess.Rule rule=ManagedCommandAccess.rule(root,commands.apply(root));
+        // Unknown native Brigadier commands keep Paper's existing permission filtering.
+        return ManagedCommandAccess.visible(player,root,rule,registeredPermissions);
     }
     @EventHandler(priority=EventPriority.HIGHEST) public void send(PlayerCommandSendEvent event) {
-        event.getCommands().removeIf(label -> !visible(event.getPlayer(),root(label)));
+        registeredPermissions=Set.copyOf(permissionNames.get());
+        // Event labels are already command-map keys: FAWE's /wand must keep its leading slash.
+        event.getCommands().removeIf(label -> !visible(event.getPlayer(),label.toLowerCase(Locale.ROOT)));
     }
+    @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void complete(TabCompleteEvent event) {
+        if(!(event.getSender() instanceof Player player) || !event.isCommand()) return;
+        if(hasArguments(event.getBuffer())) {
+            if(!visible(player,root(event.getBuffer()))) { event.setCompletions(List.of()); event.setCancelled(true); }
+        } else event.getCompletions().removeIf(label -> !visible(player,completionRoot(label)));
+    }
+    @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void completeAsync(AsyncTabCompleteEvent event) {
+        if(!(event.getSender() instanceof Player player) || !event.isCommand()) return;
+        String buffer=event.getBuffer();
+        List<String> suggestions=event.completions().stream().map(AsyncTabCompleteEvent.Completion::suggestion).toList();
+        // Native permission/completion providers run on the server thread. Only the result crosses threads.
+        Optional<CompletionDecision> decision=completionThread.apply(() -> {
+            if(hasArguments(buffer)) return new CompletionDecision(!visible(player,root(buffer)),Set.of());
+            Set<String> hidden=new HashSet<>();
+            for(String suggestion:suggestions) if(!visible(player,completionRoot(suggestion))) hidden.add(suggestion);
+            return new CompletionDecision(false,Set.copyOf(hidden));
+        });
+        if(decision.isEmpty() || decision.get().denied()) {
+            event.setCompletions(List.of()); event.setHandled(true); event.setCancelled(true);
+        } else event.completions().removeIf(completion -> decision.get().hidden().contains(completion.suggestion()));
+    }
+    private String completionRoot(String suggestion) {
+        String label=suggestion.toLowerCase(Locale.ROOT);
+        return commands.apply(label)!=null ? label : root(suggestion);
+    }
+    private static boolean hasArguments(String buffer) { return buffer.codePoints().anyMatch(Character::isWhitespace); }
     @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void execute(PlayerCommandPreprocessEvent event) {
         String command=root(event.getMessage());
         if(HELP.contains(command)) { event.setCancelled(true); show(event.getPlayer()); }

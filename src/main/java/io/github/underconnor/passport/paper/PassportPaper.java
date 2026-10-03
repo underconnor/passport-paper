@@ -68,7 +68,8 @@ public final class PassportPaper extends JavaPlugin implements Listener {
                     return message -> { audience.stream().filter(Player::isOnline).forEach(viewer -> viewer.sendMessage(message)); getServer().getConsoleSender().sendMessage(message); };
                 });
             Bukkit.getPluginManager().registerEvents(displayEvents,this);
-            CommandVisibility commandVisibility=new CommandVisibility(Bukkit.getCommandMap()::getCommand,this::allowed,CommandVisibility.read(getConfig()));
+            CommandVisibility commandVisibility=new CommandVisibility(Bukkit.getCommandMap()::getCommand,this::allowed,CommandVisibility.read(getConfig()),
+                () -> Bukkit.getPluginManager().getPermissions().stream().map(org.bukkit.permissions.Permission::getName).collect(java.util.stream.Collectors.toSet()),this::completeOnServerThread);
             Bukkit.getPluginManager().registerEvents(commandVisibility,this);
             Objects.requireNonNull(getCommand("help")).setExecutor(commandVisibility);
             Objects.requireNonNull(getCommand("help")).setTabCompleter(commandVisibility);
@@ -109,6 +110,17 @@ public final class PassportPaper extends JavaPlugin implements Listener {
     private void presence() {
         if(!ready || !presenceRunning.compareAndSet(false,true)) return;
         api.presence(serverId,onlinePlayers.keySet().stream().filter(uuid -> policies.get(uuid).map(policy -> policy.presenceEnabled() && policy.allows(serverId,Instant.now())).orElse(false)).toList()).whenComplete((ignored,error) -> presenceRunning.set(false));
+    }
+    private Optional<CommandVisibility.CompletionDecision> completeOnServerThread(java.util.function.Supplier<CommandVisibility.CompletionDecision> work) {
+        Future<CommandVisibility.CompletionDecision> future;
+        try {
+            if(Bukkit.isPrimaryThread()) return Optional.of(work.get());
+            future=Bukkit.getScheduler().callSyncMethod(this,work::get);
+        } catch(RuntimeException unavailable) { return Optional.empty(); }
+        try { return Optional.of(future.get(150,TimeUnit.MILLISECONDS)); }
+        catch(InterruptedException interrupted) { Thread.currentThread().interrupt(); return Optional.empty(); }
+        catch(ExecutionException | TimeoutException | CancellationException unavailable) { return Optional.empty(); }
+        finally { if(!future.isDone()) future.cancel(false); }
     }
     @Override public void onDisable() {
         if(departures!=null) departures.close(); if(teleports!=null) teleports.close(); if(statistics!=null) statistics.close(); ready=false; if(placeholders!=null) placeholders.unregister();
