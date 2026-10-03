@@ -20,7 +20,7 @@ display:
   transfer:
     enabled: true
     format: '[{marker}] {ign}{real_name}'
-    color: '#FFAA00'
+    color: '#FFFFFF'
     marker-color: '#FFAA00'
   chat:
     enabled: true

@@ -15,7 +15,7 @@ record DisplaySettings(Style join,Style quit,Style transfer,Style chat,Style tab
         return new DisplaySettings(
             style(config,"join","[{marker}] {ign}{real_name}","#FFFFFF","#55FF55",null,environment),
             style(config,"quit","[{marker}] {ign}{real_name}","#FFFFFF","#FF5555",null,environment),
-            style(config,"transfer","[{marker}] {ign}{real_name}","#FFAA00","#FFAA00",null,environment),
+            style(config,"transfer","[{marker}] {ign}{real_name}","#FFFFFF","#FFAA00",null,environment),
             style(config,"chat","{role}{ign}{real_name}: {message}","#AAAAAA",null,"PASSPORT_CHAT_PREFIX",environment),
             style(config,"tab","{role}{ign}{real_name}","#FFFFFF",null,"PASSPORT_TAB_PREFIX",environment),
             style(config,"nameplate","{ign}{real_name}","#FFFFFF",null,"PASSPORT_NAME_TAG",environment),

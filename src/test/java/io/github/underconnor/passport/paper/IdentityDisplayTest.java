@@ -33,6 +33,19 @@ class IdentityDisplayTest {
         assertEquals(NamedTextColor.GREEN,part(join,"+").color()); assertEquals(NamedTextColor.RED,part(quit,"-").color());
         assertEquals(NamedTextColor.WHITE,part(join,"Tester").color()); assertEquals(NamedTextColor.GRAY,part(join," (홍길동)").color());
     }
+    @Test void transferHasWhiteBracketsAndIgnWithOnlyTheMarkerOrangeAndTheNameGray() {
+        var settings=defaults();
+        Component transfer=new IdentityDisplay(settings).render(settings.transfer(),"Tester",policy(UUID.randomUUID(),"홍길동",false),Component.empty(),">");
+        assertEquals("[>] Tester (홍길동)",text(transfer));
+        assertEquals(NamedTextColor.WHITE,part(transfer,"[").color());
+        assertEquals(NamedTextColor.WHITE,part(transfer,"] ").color());
+        assertEquals(TextColor.fromHexString("#FFAA00"),part(transfer,">").color());
+        assertEquals(NamedTextColor.WHITE,part(transfer,"Tester").color());
+        assertEquals(NamedTextColor.GRAY,part(transfer," (홍길동)").color());
+        var config=new YamlConfiguration(); config.set("display.transfer.format","{ign} {marker}"); config.set("display.transfer.color","aqua");
+        var custom=DisplaySettings.read(config,key -> null);
+        assertEquals("{ign} {marker}",custom.transfer().format()); assertEquals(NamedTextColor.AQUA,custom.transfer().color());
+    }
     @Test void onlyCentralAdministratorSelectsTheStaffLabelAndDistinctColor() {
         var settings=defaults(); var display=new IdentityDisplay(settings); var member=policy(UUID.randomUUID(),"홍길동",false);
         var staff=policy(member.minecraftUuid(),"홍길동",true);
