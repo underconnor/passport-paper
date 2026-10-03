@@ -35,6 +35,7 @@ public final class PassportPaper extends JavaPlugin implements Listener {
     private StatisticsCollector statistics;
     private TeleportReceiver teleports;
     private DepartureReceiver departures;
+    private ProxyCommandRelay proxyCommands;
     private final Map<UUID,String> onlineNames=new ConcurrentHashMap<>();
     private final PassportIdentityService identities=new PassportIdentityService() {
         @Override public Optional<PassportIdentity> identity(UUID uuid) {
@@ -61,7 +62,8 @@ public final class PassportPaper extends JavaPlugin implements Listener {
             saveDefaultConfig();
             displaySettings=DisplaySettings.read(getConfig(),System::getenv);
             identityDisplay=new IdentityDisplay(displaySettings);
-            departures=new DepartureReceiver(this,serverId,TeleportSecrets.resolve(System.getenv("PASSPORT_TELEPORT_SECRET"),System.getenv("API_SERVICE_TOKEN")));
+            String proxySecret=TeleportSecrets.resolve(System.getenv("PASSPORT_TELEPORT_SECRET"),System.getenv("API_SERVICE_TOKEN"));
+            departures=new DepartureReceiver(this,serverId,proxySecret);
             displayEvents=new DisplayEvents(displaySettings,() -> ready,policies::get,serverId,java.time.Clock.systemUTC(),departures::joined,departures::quit,
                 leaving -> {
                     var audience=Bukkit.getOnlinePlayers().stream().filter(viewer -> viewer!=leaving && viewer.canSee(leaving)).toList();
@@ -73,13 +75,17 @@ public final class PassportPaper extends JavaPlugin implements Listener {
             Bukkit.getPluginManager().registerEvents(commandVisibility,this);
             Objects.requireNonNull(getCommand("help")).setExecutor(commandVisibility);
             Objects.requireNonNull(getCommand("help")).setTabCompleter(commandVisibility);
+            proxyCommands=new ProxyCommandRelay(this,serverId,proxySecret,() -> ready,this::allowed);
+            Bukkit.getPluginManager().registerEvents(proxyCommands,this);
+            Objects.requireNonNull(getCommand("passport")).setExecutor(proxyCommands);
+            Objects.requireNonNull(getCommand("passport")).setTabCompleter(proxyCommands);
             Bukkit.getServicesManager().register(PassportIdentityService.class,identities,this,ServicePriority.Normal);
             if(Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) { placeholders=new PassportPlaceholders(identities); placeholders.register(); }
             refreshes=new PolicyRefreshes(uuid -> api.policy(uuid).thenApply(policy -> {
                 if(!policies.acceptOrCurrent(policy)) throw new CompletionException(new IllegalStateException("Stale policy response"));
                 return policy;
             }));
-            teleports=new TeleportReceiver(this,serverId,TeleportSecrets.resolve(System.getenv("PASSPORT_TELEPORT_SECRET"),System.getenv("API_SERVICE_TOKEN")),refreshes::fresh,policies::get);
+            teleports=new TeleportReceiver(this,serverId,proxySecret,refreshes::fresh,policies::get);
             eventPoller=new PolicyEventPoller(api::events,() -> Set.copyOf(onlinePlayers.keySet()),this::refreshFromEvent);
             heartbeat=new ServerHeartbeat(() -> api.heartbeat("paper",List.of(new ServerRegistration(serverId,
                 ApiClient.env("PASSPORT_SERVER_LABEL",serverId)))),available -> {
@@ -123,7 +129,8 @@ public final class PassportPaper extends JavaPlugin implements Listener {
         finally { if(!future.isDone()) future.cancel(false); }
     }
     @Override public void onDisable() {
-        if(departures!=null) departures.close(); if(teleports!=null) teleports.close(); if(statistics!=null) statistics.close(); ready=false; if(placeholders!=null) placeholders.unregister();
+        ready=false; if(proxyCommands!=null) proxyCommands.close();
+        if(departures!=null) departures.close(); if(teleports!=null) teleports.close(); if(statistics!=null) statistics.close(); if(placeholders!=null) placeholders.unregister();
         Bukkit.getServicesManager().unregisterAll(this); nameTags.close(); onlineNames.clear(); onlinePlayers.clear();
         if(api!=null) { try { api.presence(serverId,List.of()).get(2200,TimeUnit.MILLISECONDS); } catch(Exception ignored) {} api.close(); }
     }

@@ -6,6 +6,9 @@ author: underconnor
 description: Central Passport admission and display enforcement
 softdepend: [PlaceholderAPI]
 commands:
+  passport:
+    description: Passport 플레이어 명령 연결
+    aliases: ['서버']
   help:
     description: 사용 가능한 서버 명령 안내
     aliases: ['?', '도움말']

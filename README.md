@@ -135,3 +135,7 @@ Velocity의 `/passport tp` 요청을 `passport:teleport` 채널로 받습니다.
 ### 서비스별 API 키와 TP 서명
 
 `API_SERVICE_TOKEN`에는 이 서비스에 발급한 Passport 키를 넣습니다. `psk_` 키를 사용하면 `PASSPORT_TELEPORT_SECRET`에 프록시와 모든 Paper가 공유하는 별도 32자 이상의 무작위 비밀을 설정해야 합니다. API 키를 회전해도 TP 서명 비밀은 바뀌지 않습니다. 기존 키에서 이전하는 동안만 별도 값이 없을 때 기존 API 키를 서명에 사용합니다. 비밀은 저장소나 로그에 기록하지 않습니다.
+
+## Citizens NPC
+
+NPC 클릭으로 서버를 이동하려면 `/npc command add -p passport server <서버 명령어명>`을 사용합니다. `passport web`, `status`, `list`, `help`, `link`, `queue [leave]`와 `서버` 별칭도 지원합니다. Paper·Velocity의 명령 중계 지원 버전을 함께 설치해야 하며, 클릭한 플레이어의 기존 권한과 대기열이 적용됩니다.
