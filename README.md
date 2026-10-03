@@ -8,6 +8,7 @@
 
 - 비동기 pre-login 단계에서 서버 UUID 정책을 확인하고, 오류·미허가 결과는 입장 거부
 - 로그인 직전과 입장 직후에도 유효 정책 확인
+- 정원 초과 시 유효한 중앙 관리자 정책과 해당 서버 접근 권한이 있는 UUID만 정원 제한 우회
 - 20초 간격 재조회, 1초 간격 만료 확인 후 종료. 활동 이벤트는 만료 즉시 거부
 - 게임 정보 제공 동의 후 채팅·탭 목록에 `[roleLabel] MinecraftName (실명)` 표시. 전체 학번은 전송하지 않음
 - Adventure plain text로 prefix를 만들고 HTML·MiniMessage·legacy 색상 명령으로 해석하지 않음
@@ -16,6 +17,14 @@
 머리 위 이름에는 Passport가 소유한 scoreboard team의 suffix로 실명을 표시합니다. 다른 플러그인의 기존 팀은 덮어쓰지 않아 그 경우 머리 위 실명은 생략되며 채팅·탭은 유지됩니다. LuckPerms 쓰기는 하지 않습니다. 채팅 renderer나 탭 표시를 관리하는 다른 플러그인과 겹치면 아래 변수를 false로 설정합니다. 서버 플러그인 reload는 지원 운영 방식이 아니며 재시작으로 적용합니다.
 
 이름·역할 표시는 흰색/회색을 사용합니다. 채팅 본문은 기존 Component의 색·장식·클릭 정보를 그대로 이어 붙이며 이름 색을 본문에 상속시키지 않습니다.
+
+## 정원 초과와 관리자 입장
+
+Paper 26.2의 `PlayerServerFullCheckEvent`에서만 정원 제한을 해제합니다. 비동기 pre-login에서 받은 현재 정책이 `active`이고 이 서버를 허용하며 `administrator: true`인 경우에만 적용합니다. 관리자 여부는 학교 인증 유효기간으로 제한된 중앙 API 정책을 사용하며, OP·LuckPerms 그룹·닉네임이나 기존 접속자의 권한으로 대신하지 않습니다. 만료·회수·다른 서버 scope·누락 정책은 우회를 허용하지 않으며 영구 권한을 추가하지 않습니다.
+
+일반 로그인은 `PlayerConnectionValidateLoginEvent`에서 로그인 및 configuration 단계의 인증된 연결 프로필 UUID로 재검사합니다. 기존 `PlayerLoginEvent`의 `allow()`는 사용하지 않습니다. 일반 로그인 검증에 전달된 밴·화이트리스트·다른 플러그인의 거절은 유지하며, 정원 이벤트도 가장 이른 우선순위에서 처리하여 후속 플러그인의 거절을 덮어쓰지 않습니다. 두 검사 모두 HTTP를 기다리지 않고 pre-login이 확인한 정책 cache의 현재 lease를 검사합니다. 대기열·자리 예약은 Velocity가 담당하고 Paper는 실제 정원과 최종 접근 검사를 담당합니다.
+
+API 계약과 환경 변수 추가는 없습니다. Paper API 26.2 실제 이벤트 객체로 관리자/일반 회원·만료·회수·잘못된 UUID·두 로그인 단계·기존 킥 보존을 검사하며, 실제 클라이언트의 만원 서버 입장은 배포 후 별도 검증합니다. [Paper 정원 검사 API](https://jd.papermc.io/paper/26.2/io/papermc/paper/event/player/PlayerServerFullCheckEvent.html), [연결 검증 API](https://jd.papermc.io/paper/26.2/io/papermc/paper/event/connection/PlayerConnectionValidateLoginEvent.html)
 
 ## 서버 등록과 상태 보고
 

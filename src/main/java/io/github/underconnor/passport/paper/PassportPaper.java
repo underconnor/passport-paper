@@ -53,6 +53,7 @@ public final class PassportPaper extends JavaPlugin implements Listener {
         try {
             serverId=ApiClient.env("PASSPORT_SERVER_ID","");
             if(!serverId.matches("[a-z][a-z0-9_-]{0,63}")) throw new IllegalArgumentException("PASSPORT_SERVER_ID is required");
+            Bukkit.getPluginManager().registerEvents(new LoginAdmission(() -> ready,policies::get,serverId,DENIED,java.time.Clock.systemUTC()),this);
             api=new ApiClient(ApiClient.env("PASSPORT_API_BASE_URL","https://api.passport.example/"),System.getenv("API_SERVICE_TOKEN"),
                 Boolean.parseBoolean(ApiClient.env("PASSPORT_ALLOW_INSECURE_HTTP","false")));
             chatPrefix=Boolean.parseBoolean(ApiClient.env("PASSPORT_CHAT_PREFIX","true"));
@@ -107,9 +108,6 @@ public final class PassportPaper extends JavaPlugin implements Listener {
             refreshes.fetch(event.getUniqueId()).get(2100,TimeUnit.MILLISECONDS);
             if(!policies.allows(event.getUniqueId(),serverId,Instant.now())) event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_WHITELIST,DENIED);
         } catch(Exception error) { event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER,DENIED); }
-    }
-    @EventHandler(priority=EventPriority.HIGHEST) public void login(PlayerLoginEvent event) {
-        if(!allowed(event.getPlayer())) event.disallow(PlayerLoginEvent.Result.KICK_WHITELIST,DENIED);
     }
     @EventHandler public void join(PlayerJoinEvent event) {
         if(!allowed(event.getPlayer())) event.getPlayer().kick(DENIED);

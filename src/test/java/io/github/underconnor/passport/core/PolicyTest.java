@@ -92,6 +92,14 @@ class PolicyTest {
         assertFalse(policy.active(now)); assertFalse(policy.allows("lobby",now));
         assertFalse(policy.valid(Instant.parse("2026-09-30T00:01:00Z")));
     }
+    @Test void administratorMustBeAnExplicitJsonBooleanAndOldProducersCannotGrantIt() {
+        String body=json("active",1,"2026-09-30T00:00:00Z","2026-09-30T00:01:00Z");
+        assertFalse(Policy.parse(body,uuid,now).administrator());
+        for(String invalid:new String[]{"\"true\"","\"false\"","1","null","{}","[]"}) {
+            assertThrows(IllegalArgumentException.class,() -> Policy.parse(body.replace("\"policyVersion\":1",
+                "\"administrator\":"+invalid+",\"policyVersion\":1"),uuid,now));
+        }
+    }
     @Test void collectionRequiresExplicitServerScopeAndPresenceRemainsIndependent() {
         String body=json("active",1,"2026-09-30T00:00:00Z","2026-09-30T00:01:00Z")
             .replace("[\"lobby\"]","[\"lobby\",\"survival\"]")
