@@ -34,6 +34,7 @@ public final class PassportPaper extends JavaPlugin implements Listener {
     private PassportPlaceholders placeholders;
     private StatisticsCollector statistics;
     private TeleportReceiver teleports;
+    private DepartureReceiver departures;
     private final Map<UUID,String> onlineNames=new ConcurrentHashMap<>();
     private final PassportIdentityService identities=new PassportIdentityService() {
         @Override public Optional<PassportIdentity> identity(UUID uuid) {
@@ -60,7 +61,12 @@ public final class PassportPaper extends JavaPlugin implements Listener {
             saveDefaultConfig();
             displaySettings=DisplaySettings.read(getConfig(),System::getenv);
             identityDisplay=new IdentityDisplay(displaySettings);
-            displayEvents=new DisplayEvents(displaySettings,() -> ready,policies::get,serverId,java.time.Clock.systemUTC());
+            departures=new DepartureReceiver(this,serverId,TeleportSecrets.resolve(System.getenv("PASSPORT_TELEPORT_SECRET"),System.getenv("API_SERVICE_TOKEN")));
+            displayEvents=new DisplayEvents(displaySettings,() -> ready,policies::get,serverId,java.time.Clock.systemUTC(),departures::joined,departures::quit,
+                leaving -> {
+                    var audience=Bukkit.getOnlinePlayers().stream().filter(viewer -> viewer!=leaving && viewer.canSee(leaving)).toList();
+                    return message -> { audience.stream().filter(Player::isOnline).forEach(viewer -> viewer.sendMessage(message)); getServer().getConsoleSender().sendMessage(message); };
+                });
             Bukkit.getPluginManager().registerEvents(displayEvents,this);
             CommandVisibility commandVisibility=new CommandVisibility(Bukkit.getCommandMap()::getCommand,this::allowed,CommandVisibility.read(getConfig()));
             Bukkit.getPluginManager().registerEvents(commandVisibility,this);
@@ -105,7 +111,7 @@ public final class PassportPaper extends JavaPlugin implements Listener {
         api.presence(serverId,onlinePlayers.keySet().stream().filter(uuid -> policies.get(uuid).map(policy -> policy.presenceEnabled() && policy.allows(serverId,Instant.now())).orElse(false)).toList()).whenComplete((ignored,error) -> presenceRunning.set(false));
     }
     @Override public void onDisable() {
-        if(teleports!=null) teleports.close(); if(statistics!=null) statistics.close(); ready=false; if(placeholders!=null) placeholders.unregister();
+        if(departures!=null) departures.close(); if(teleports!=null) teleports.close(); if(statistics!=null) statistics.close(); ready=false; if(placeholders!=null) placeholders.unregister();
         Bukkit.getServicesManager().unregisterAll(this); nameTags.close(); onlineNames.clear(); onlinePlayers.clear();
         if(api!=null) { try { api.presence(serverId,List.of()).get(2200,TimeUnit.MILLISECONDS); } catch(Exception ignored) {} api.close(); }
     }

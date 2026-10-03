@@ -64,5 +64,32 @@ class DisplayEventsTest {
         current.set(null); staff=true;
         assertEquals("Tester: hello",text(event.renderer().render(player,Component.empty(),event.message(),player)));
     }
+    @Test void deferredDepartureUsesOrangeTransferAndCapturesItsAudienceBeforeThePlayerLeaves() {
+        var broadcasts=new ArrayList<Component>(); var laterAudience=new ArrayList<Component>();
+        var completion=new AtomicReference<java.util.function.Consumer<Boolean>>();
+        var audience=new AtomicReference<java.util.function.Consumer<Component>>(broadcasts::add);
+        var events=new DisplayEvents(defaults(),() -> true,id -> Optional.ofNullable(current.get()),"lobby",Clock.systemUTC(),
+            id -> {},(id,callback) -> completion.set(callback),actor -> audience.get());
+        var quit=new PlayerQuitEvent(player,Component.text("vanilla"),PlayerQuitEvent.QuitReason.DISCONNECTED);
+        events.quit(quit); assertNull(quit.quitMessage()); assertTrue(broadcasts.isEmpty());
+        audience.set(laterAudience::add); current.set(null); completion.get().accept(true);
+        assertEquals("[>] Tester (홍길동)",text(broadcasts.getFirst())); assertTrue(laterAudience.isEmpty());
+        assertTrue(colors(broadcasts.getFirst()).contains(net.kyori.adventure.text.format.TextColor.fromHexString("#FFAA00")));
+    }
+    @Test void deferredOrdinaryQuitAndConfigDisabledTransferRemainRedAndDoNotInventTransferMessages() {
+        var broadcasts=new ArrayList<Component>();
+        var events=new DisplayEvents(defaults(),() -> true,id -> Optional.ofNullable(current.get()),"lobby",Clock.systemUTC(),
+            id -> {},(id,callback) -> callback.accept(false),actor -> broadcasts::add);
+        var quit=new PlayerQuitEvent(player,Component.text("vanilla"),PlayerQuitEvent.QuitReason.DISCONNECTED); events.quit(quit);
+        assertNull(quit.quitMessage()); assertEquals("[-] Tester (홍길동)",text(broadcasts.getFirst()));
+        var config=new YamlConfiguration(); config.set("display.transfer.enabled",false);
+        events=new DisplayEvents(DisplaySettings.read(config,key -> null),() -> true,id -> Optional.ofNullable(current.get()),"lobby",Clock.systemUTC(),
+            id -> {},(id,callback) -> callback.accept(true),actor -> broadcasts::add);
+        quit.quitMessage(Component.text("vanilla")); events.quit(quit); assertEquals("[-] Tester (홍길동)",text(quit.quitMessage()));
+    }
+    static Set<net.kyori.adventure.text.format.TextColor> colors(Component component) {
+        var colors=new HashSet<net.kyori.adventure.text.format.TextColor>(); if(component.color()!=null) colors.add(component.color());
+        component.children().forEach(child -> colors.addAll(colors(child))); return colors;
+    }
     AsyncChatEvent chat() { return new AsyncChatEvent(false,player,new HashSet<>(),ChatRenderer.defaultRenderer(),Component.text("hello"),Component.text("hello"),null); }
 }

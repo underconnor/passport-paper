@@ -17,6 +17,11 @@ display:
     format: '[{marker}] {ign}{real_name}'
     color: '#FFFFFF'
     marker-color: '#FF5555'
+  transfer:
+    enabled: true
+    format: '[{marker}] {ign}{real_name}'
+    color: '#FFAA00'
+    marker-color: '#FFAA00'
   chat:
     enabled: true
     format: '{role}{ign}{real_name}: {message}'
