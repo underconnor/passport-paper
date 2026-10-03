@@ -5,3 +5,14 @@ api-version: '26.2'
 author: underconnor
 description: Central Passport admission and display enforcement
 softdepend: [PlaceholderAPI]
+commands:
+  help:
+    description: 사용 가능한 서버 명령 안내
+    aliases: ['?', '도움말']
+permissions:
+  passport.display.staff:
+    description: 현재 서버에서 운영진 표시만 사용 (관리 권한을 부여하지 않음)
+    default: false
+  passport.commands.inspect:
+    description: 서버 플러그인과 버전 및 기본 전체 도움말 조회
+    default: false

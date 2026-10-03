@@ -10,13 +10,17 @@
 - 로그인 직전과 입장 직후에도 유효 정책 확인
 - 정원 초과 시 유효한 중앙 관리자 정책과 해당 서버 접근 권한이 있는 UUID만 정원 제한 우회
 - 20초 간격 재조회, 1초 간격 만료 확인 후 종료. 활동 이벤트는 만료 즉시 거부
-- 게임 정보 제공 동의 후 채팅·탭 목록에 `[roleLabel] MinecraftName (실명)` 표시. 전체 학번은 전송하지 않음
+- 게임 정보 제공 동의 후 채팅·탭 목록에 `[회원/운영진] MinecraftName (실명)` 표시. 전체 학번은 전송하지 않음
 - Adventure plain text로 prefix를 만들고 HTML·MiniMessage·legacy 색상 명령으로 해석하지 않음
 - 기존 LuckPerms 그룹·메타데이터를 변경하지 않음
 
 머리 위 이름에는 Passport가 소유한 scoreboard team의 suffix로 실명을 표시합니다. 다른 플러그인의 기존 팀은 덮어쓰지 않아 그 경우 머리 위 실명은 생략되며 채팅·탭은 유지됩니다. LuckPerms 쓰기는 하지 않습니다. 채팅 renderer나 탭 표시를 관리하는 다른 플러그인과 겹치면 아래 변수를 false로 설정합니다. 서버 플러그인 reload는 지원 운영 방식이 아니며 재시작으로 적용합니다.
 
-이름·역할 표시는 흰색/회색을 사용합니다. 채팅 본문은 기존 Component의 색·장식·클릭 정보를 그대로 이어 붙이며 이름 색을 본문에 상속시키지 않습니다.
+입퇴장은 흰색 `[+] IGN (실명)` / `[-] IGN (실명)`에서 기호만 초록/빨강, 실명은 회색입니다. `[회원]`은 `#22C55E`, `[운영진]`은 `#A3E635`, IGN은 흰색입니다. 채팅 본문은 기존 Component의 색·장식·클릭 정보를 유지합니다. 운영진 표시는 유효한 중앙 `administrator` 또는 현재 서버의 `passport.display.staff` 권한을 사용하며 OP·접근 권한을 부여하지 않습니다.
+
+서버별 `plugins/Passport/config.yml`에서 `display.join/quit/chat/tab/nameplate`의 `enabled`, `format`, `color`와 공통 `colors`를 설정하고 재시작합니다. 포맷은 `{role}`, `{ign}`, `{real_name}`을 안전한 Component로 치환하며 채팅은 `{message}`, 입퇴장은 `{marker}`도 지원합니다. `enabled: false`는 다른 플러그인 표시를 유지하고 빈 입퇴장 포맷은 메시지를 숨깁니다. 기존 표시 환경 변수의 `false`도 계속 우선 적용합니다.
+
+`/help`, `/?`, `/도움말`은 `help.entries` 중 실제 설치·명령 권한·선택 추가 권한을 통과한 항목을 클릭 안내합니다. 두 공개 Velocity 안내 링크만 명시적 예외입니다. 플러그인·버전·전체 도움말 조회는 `passport.commands.inspect`로 제한하며, 명령 목록에서 제거하고 직접 실행도 차단합니다. `passport.display.staff`와 `passport.commands.inspect`의 기본값은 false입니다. 코어 및 실제 Paper 이벤트 객체의 모의 회귀를 검사하며 실제 클라이언트 화면·다른 플러그인 공존 검증은 별도입니다.
 
 ## 정원 초과와 관리자 입장
 

@@ -3,7 +3,6 @@ package io.github.underconnor.passport.paper;
 import io.github.underconnor.passport.core.*;
 import io.github.underconnor.passport.api.*;
 import org.bukkit.plugin.ServicePriority;
-import io.papermc.paper.event.player.AsyncChatEvent;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
@@ -28,7 +27,9 @@ public final class PassportPaper extends JavaPlugin implements Listener {
     private final java.util.concurrent.atomic.AtomicBoolean presenceRunning=new java.util.concurrent.atomic.AtomicBoolean();
     private String serverId;
     private volatile boolean ready;
-    private boolean chatPrefix, tabPrefix, nameTagEnabled;
+    private DisplaySettings displaySettings;
+    private IdentityDisplay identityDisplay;
+    private DisplayEvents displayEvents;
     private final NameTags nameTags=new NameTags();
     private PassportPlaceholders placeholders;
     private StatisticsCollector statistics;
@@ -56,9 +57,15 @@ public final class PassportPaper extends JavaPlugin implements Listener {
             Bukkit.getPluginManager().registerEvents(new LoginAdmission(() -> ready,policies::get,serverId,DENIED,java.time.Clock.systemUTC()),this);
             api=new ApiClient(ApiClient.env("PASSPORT_API_BASE_URL","https://api.passport.example/"),System.getenv("API_SERVICE_TOKEN"),
                 Boolean.parseBoolean(ApiClient.env("PASSPORT_ALLOW_INSECURE_HTTP","false")));
-            chatPrefix=Boolean.parseBoolean(ApiClient.env("PASSPORT_CHAT_PREFIX","true"));
-            tabPrefix=Boolean.parseBoolean(ApiClient.env("PASSPORT_TAB_PREFIX","true"));
-            nameTagEnabled=Boolean.parseBoolean(ApiClient.env("PASSPORT_NAME_TAG","true"));
+            saveDefaultConfig();
+            displaySettings=DisplaySettings.read(getConfig(),System::getenv);
+            identityDisplay=new IdentityDisplay(displaySettings);
+            displayEvents=new DisplayEvents(displaySettings,() -> ready,policies::get,serverId,java.time.Clock.systemUTC());
+            Bukkit.getPluginManager().registerEvents(displayEvents,this);
+            CommandVisibility commandVisibility=new CommandVisibility(Bukkit.getCommandMap()::getCommand,this::allowed,CommandVisibility.read(getConfig()));
+            Bukkit.getPluginManager().registerEvents(commandVisibility,this);
+            Objects.requireNonNull(getCommand("help")).setExecutor(commandVisibility);
+            Objects.requireNonNull(getCommand("help")).setTabCompleter(commandVisibility);
             Bukkit.getServicesManager().register(PassportIdentityService.class,identities,this,ServicePriority.Normal);
             if(Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) { placeholders=new PassportPlaceholders(identities); placeholders.register(); }
             refreshes=new PolicyRefreshes(uuid -> api.policy(uuid).thenApply(policy -> {
@@ -134,20 +141,11 @@ public final class PassportPaper extends JavaPlugin implements Listener {
             return applied;
         });
     }
-    private Component prefix(Player player) {
-        return policies.get(player.getUniqueId()).map(policy -> IdentityDisplay.prefix(policy.roleLabel())).orElse(Component.empty());
-    }
-    private Component playerName(Player player) {
-        String real=identities.identity(player.getUniqueId()).map(PassportIdentity::realName).orElse("");
-        return IdentityDisplay.name(player.getName(),real);
-    }
     private void display(Player player) {
-        if(tabPrefix) player.playerListName(prefix(player).append(playerName(player)));
-        if(nameTagEnabled) nameTags.update(player,identities.identity(player.getUniqueId()).map(PassportIdentity::realName).orElse(""));
-    }
-    @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void chat(AsyncChatEvent event) {
-        if(!allowed(event.getPlayer())) { event.setCancelled(true); return; }
-        if(chatPrefix) event.renderer((source,sourceDisplayName,message,viewer) -> IdentityDisplay.chat(prefix(source),playerName(source),message));
+        Policy policy=displayEvents.policy(player.getUniqueId());
+        boolean staff=player.hasPermission(DisplayEvents.STAFF);
+        if(displaySettings.tab().enabled()) player.playerListName(identityDisplay.render(displaySettings.tab(),player.getName(),policy,Component.empty(),"",staff));
+        if(displaySettings.nameplate().enabled()) nameTags.update(player,identityDisplay.nameplate(player.getName(),policy,staff));
     }
     @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void move(PlayerMoveEvent event) { if(!allowed(event.getPlayer())) event.setCancelled(true); }
     @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void interact(PlayerInteractEvent event) { if(!allowed(event.getPlayer())) event.setCancelled(true); }
