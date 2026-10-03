@@ -144,7 +144,11 @@ public final class PassportPaper extends JavaPlugin implements Listener {
     private void display(Player player) {
         Policy policy=displayEvents.policy(player.getUniqueId());
         boolean staff=player.hasPermission(DisplayEvents.STAFF);
-        if(displaySettings.tab().enabled()) player.playerListName(identityDisplay.render(displaySettings.tab(),player.getName(),policy,Component.empty(),"",staff));
+        if(displaySettings.tab().enabled()) {
+            player.playerListName(identityDisplay.render(displaySettings.tab(),player.getName(),policy,Component.empty(),"",staff));
+            int order=policy!=null && (policy.administrator() || staff) ? 1 : 0;
+            if(player.getPlayerListOrder()!=order) player.setPlayerListOrder(order);
+        }
         if(displaySettings.nameplate().enabled()) nameTags.update(player,identityDisplay.nameplate(player.getName(),policy,staff));
     }
     @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void move(PlayerMoveEvent event) { if(!allowed(event.getPlayer())) event.setCancelled(true); }
