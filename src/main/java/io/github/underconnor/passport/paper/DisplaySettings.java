@@ -8,7 +8,7 @@ import java.util.regex.Pattern;
 
 /** Immutable settings are safe to read from Paper's asynchronous chat renderer. */
 record DisplaySettings(Style join,Style quit,Style transfer,Style chat,Style tab,Style nameplate,
-                       TextColor ign,TextColor realName,TextColor member,TextColor administrator) {
+                       TextColor ign,TextColor realName,TextColor member,TextColor nonMember,TextColor administrator) {
     record Style(boolean enabled,String format,TextColor color,TextColor marker) {}
     private static final Pattern TOKEN=Pattern.compile("\\{([a-z_]+)}");
     static DisplaySettings read(ConfigurationSection config,Function<String,String> environment) {
@@ -20,7 +20,7 @@ record DisplaySettings(Style join,Style quit,Style transfer,Style chat,Style tab
             style(config,"tab","{role}{ign}{real_name}","#FFFFFF",null,"PASSPORT_TAB_PREFIX",environment),
             style(config,"nameplate","{ign}{real_name}","#FFFFFF",null,"PASSPORT_NAME_TAG",environment),
             color(config,"colors.ign","#FFFFFF"),color(config,"colors.real-name","#AAAAAA"),
-            color(config,"colors.member","#22C55E"),color(config,"colors.administrator","#A3E635"));
+            color(config,"colors.member","#22C55E"),color(config,"colors.non-member","#AAAAAA"),color(config,"colors.administrator","#A3E635"));
     }
     private static Style style(ConfigurationSection config,String name,String fallback,String color,String marker,
                                String legacy,Function<String,String> environment) {

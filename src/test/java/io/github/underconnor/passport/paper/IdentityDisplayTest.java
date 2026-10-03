@@ -55,7 +55,24 @@ class IdentityDisplayTest {
         assertEquals(TextColor.fromHexString("#22C55E"),part(regular,"[회원] ").color());
         assertEquals(TextColor.fromHexString("#A3E635"),part(admin,"[운영진] ").color());
         Policy misleading=new Policy(member.minecraftUuid(),"active",Set.of("lobby"),"운영진","",1,member.issuedAt(),member.expiresAt());
-        assertEquals("Tester: hello",text(display.render(settings.chat(),"Tester",misleading,Component.text("hello"),"")));
+        assertEquals("[비회원] Tester: hello",text(display.render(settings.chat(),"Tester",misleading,Component.text("hello"),"")));
+    }
+    @Test void nonmemberPrefixIsGrayAcrossRoleSurfacesWithoutOverridingStaffOrChatBody() {
+        var settings=defaults(); var display=new IdentityDisplay(settings); Instant now=Instant.now();
+        var nonmember=new Policy(UUID.randomUUID(),"active",Set.of("lobby"),"","개발용 계정",1,now,now.plusSeconds(60),false,"",false,Map.of());
+        Component message=Component.text("hello",NamedTextColor.GOLD);
+        Component chat=display.render(settings.chat(),"Tester",nonmember,message,"");
+        assertEquals("[비회원] Tester (개발용 계정): hello",text(chat));
+        assertEquals(NamedTextColor.GRAY,part(chat,"[비회원] ").color());
+        assertNull(chat.color()); assertEquals(message,chat.children().getLast());
+        Component tab=display.render(settings.tab(),"Tester",nonmember,Component.empty(),"");
+        assertEquals("[비회원] Tester (개발용 계정)",text(tab));
+        assertEquals(NamedTextColor.GRAY,part(tab,"[비회원] ").color());
+        assertEquals("[운영진] Tester (개발용 계정)",text(display.render(settings.tab(),"Tester",nonmember,Component.empty(),"",true)));
+        assertEquals("Tester",text(display.render(settings.tab(),"Tester",null,Component.empty(),"")));
+        var config=new YamlConfiguration(); config.set("colors.non-member","dark_gray"); config.set("display.nameplate.format","{role}{ign}{real_name}");
+        var custom=new IdentityDisplay(DisplaySettings.read(config,key -> null)).nameplate("Tester",nonmember);
+        assertEquals("[비회원] ",text(custom.prefix())); assertEquals(NamedTextColor.DARK_GRAY,part(custom.prefix(),"[비회원] ").color());
     }
     @Test void originalChatBodyKeepsItsColorDecorationAndActionsWithoutIdentityInheritance() {
         var settings=defaults(); var display=new IdentityDisplay(settings);
@@ -82,7 +99,7 @@ class IdentityDisplayTest {
         try(var reader=new InputStreamReader(Objects.requireNonNull(getClass().getResourceAsStream("/config.yml")),StandardCharsets.UTF_8)) {
             assertEquals(defaults(),DisplaySettings.read(YamlConfiguration.loadConfiguration(reader),key -> null));
         }
-        for(String path:List.of("display.chat.format","colors.member","display.nameplate.format","display.join.enabled")) {
+        for(String path:List.of("display.chat.format","colors.member","colors.non-member","display.nameplate.format","display.join.enabled")) {
             var config=new YamlConfiguration(); config.set(path,"invalid {secret}");
             assertThrows(IllegalArgumentException.class,() -> DisplaySettings.read(config,key -> null),path);
         }

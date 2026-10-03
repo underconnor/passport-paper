@@ -32,6 +32,7 @@ final class IdentityDisplay {
         if(policy!=null) {
             if(policy.administrator() || staff) role=Component.text("[운영진] ",settings.administrator());
             else if(policy.member()) role=Component.text("[회원] ",settings.member());
+            else role=Component.text("[비회원] ",settings.nonMember());
         }
         return Map.of("role",role,"ign",Component.text(ign,settings.ign()),
             "real_name",real.isBlank() || real.equals(ign) ? Component.empty() : Component.text(" ("+real+")",settings.realName()),

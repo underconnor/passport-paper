@@ -5,6 +5,7 @@ colors:
   ign: '#FFFFFF'
   real-name: '#AAAAAA'
   member: '#22C55E'
+  non-member: '#AAAAAA'
   administrator: '#A3E635'
 display:
   join:
